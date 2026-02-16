@@ -23,6 +23,7 @@ card_schema = '''
         front TEXT NOT NULL,
         back TEXT NOT NULL,
         card_type TEXT DEFAULT 'basic',
+        content_type TEXT DEFAULT 'text',
         
         -- SRS parameters (for FSRS algorithm)
         state TEXT DEFAULT 'new',
