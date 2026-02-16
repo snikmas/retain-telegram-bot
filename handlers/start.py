@@ -44,12 +44,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = db.get_user(user_id)
 
     if user:
-        defaults = db.get_user_defaults(user_id)
         username = update.effective_user.username
-        if defaults['deck_id']: #is not null
-            context.user_data['default_deck_id'] = defaults['deck_id']
-            
-        context.user_data['default_card_type'] = defaults['card_type']
+        
+        defaults = db.get_user_defaults(user_id)
+        if defaults:
+            if defaults['deck_id']:
+                context.user_data['default_deck_id'] = defaults['deck_id']
+            if defaults['card_type']:
+                context.user_data['default_card_type'] = defaults['card_type']
         
         buttons = [
             [InlineKeyboardButton('Add Card', callback_data='add_card')],
@@ -62,7 +64,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         username = update.effective_user.username
         db.create_user(user_id, username, update.effective_user.first_name)
- 
+
+        # context.user_data.get('default_card_type') =
+        context.user_data['default_card_type'] = 'basic'
+
         buttons = [
             [InlineKeyboardButton('Create Card', callback_data='add_card')],
             [InlineKeyboardButton('Tutorial', callback_data='tutorial')]

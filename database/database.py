@@ -66,18 +66,18 @@ def get_all_decks(user_id):
     with get_db() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('SELECT deck_id, deck_name FROM decks WHERE users_id = ?', (user_id,))
-        rows = cursor.fetchone()
+        cursor.execute('SELECT deck_id, deck_name FROM decks WHERE user_id = ?', (user_id,))
+        rows = cursor.fetchall()
 
         if rows:
-            return [{'id': row['deck_id'], 'name': row['name']} for row in rows]
+            return [{'id': row['deck_id'], 'name': row['deck_name']} for row in rows]
         else: 
-            return None
+            return []
 
 def get_deck_id(user_id, deck_name):
-    with get_db as conn:
-        cursor = conn.cursor
-        cursor.execute("SELECT deck_id FROM decks WHERE user_id = ?, deck_name = ?", (user_id, deck_name))
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT deck_id FROM decks WHERE user_id = ? AND deck_name = ?", (user_id, deck_name))
         row = cursor.fetchone()
         if row:
             return row['deck_id']
@@ -85,8 +85,8 @@ def get_deck_id(user_id, deck_name):
 
 def get_deck_name(deck_id):
     with get_db() as conn:
-        cursor = conn.cursor
-        cursor.execute("SELECT deck_name FROM decks WHERE deck_id = ?", {deck_id,})
+        cursor = conn.cursor()
+        cursor.execute("SELECT deck_name FROM decks WHERE deck_id = ?", (deck_id,))
         
         row = cursor.fetchone()
         if row:
@@ -100,8 +100,30 @@ def create_deck_db(user_id, deck_name):
         cursor = conn.cursor()
 
         cursor.execute('INSERT INTO decks (user_id, deck_name) VALUES (?, ?)', (user_id, deck_name))
-    pass
 
+
+# ============================================================
+# CARDS COMMANDS =============================================
+def save_card(card_dict, card_type, deck_id, user_id):
+    """card_dict is always {'front': ..., 'back': ...}"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        front = card_dict['front']
+        back = card_dict['back']
+        
+        # Save original
+        cursor.execute(
+            "INSERT INTO cards (front, back, card_type, deck_id, user_id) VALUES (?, ?, ?, ?, ?)",
+            (front, back, card_type, deck_id, user_id)
+        )
+        
+        # If reverse, save flipped version too
+        if card_type.lower() == 'reverse':
+            cursor.execute(
+                "INSERT INTO cards (front, back, card_type, deck_id, user_id) VALUES (?, ?, ?, ?, ?)",
+                (back, front, card_type, deck_id, user_id)
+            )
 
 # ============================================================
 
@@ -121,7 +143,8 @@ def get_db():
 
 def init_db():
     with get_db() as conn:
-        cursor = conn.execute(user_schema)
-        cursor = conn.execute(deck_schema)
-        cursor = conn.execute(card_schema)
+        cursor = conn.cursor()
+        conn.execute(user_schema)
+        conn.execute(deck_schema)
+        conn.execute(card_schema)
         

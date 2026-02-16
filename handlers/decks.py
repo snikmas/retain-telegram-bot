@@ -29,12 +29,13 @@ import os
 import logging
 
 # ==================== FOLDERS IMPORT ====================
+from database.database import init_db
 import database.database as db
 # later put them to one folder and just folder import *
-from handlers.cards import add_card_entry
-from handlers.start import start
-from handlers.flow_handlers import get_content
-from handlers.decks import create_deck_db
+import handlers.cards as hand_card
+import handlers.start as hand_start
+import handlers.flow_handlers as hand_flow
+import handlers.decks as hand_deck
 
 from utils.constants import AddCardState
 
@@ -52,4 +53,23 @@ async def create_deck(update: Update, context:ContextTypes.DEFAULT_TYPE):
     context.user_data['cur_deck_id'] = db.get_deck_id(update.effective_user.id, deck_name)
 
     # we call it from 'get_content' next one is preview
-    return AddCardState.PREVIEW
+    await hand_flow.preview(update.message, context)
+    return AddCardState.CONFIRMATION_PREVIEW
+
+# In decks.py
+async def selected_deck(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    deck_id = int(query.data.split('_')[1])
+    context.user_data['cur_deck_id'] = deck_id
+    
+    await hand_flow.preview(query, context)
+    return AddCardState.CONFIRMATION_PREVIEW
+
+async def create_new_deck(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    await query.edit_message_text("What should we call this deck?")
+    return AddCardState.CREATING_DECK
