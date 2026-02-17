@@ -99,6 +99,25 @@ def create_deck_db(user_id, deck_name):
         return cursor.lastrowid
 
 
+def get_decks_with_stats(user_id):
+    """Get all decks with card count and due count in a single query."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT d.deck_id, d.deck_name,
+                      COUNT(c.card_id) AS card_count,
+                      SUM(CASE WHEN c.due_date <= datetime('now') THEN 1 ELSE 0 END) AS due_count
+               FROM decks d
+               LEFT JOIN cards c ON c.deck_id = d.deck_id
+               WHERE d.user_id = ?
+               GROUP BY d.deck_id
+               ORDER BY d.deck_name
+            """,
+            (user_id,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 # CARDS COMMANDS =============================================
 
 def save_card(card_dict, card_type, deck_id, user_id):
@@ -155,6 +174,51 @@ def update_card_srs(card_id, due_date, stability, difficulty, reps, lapses, stat
             """,
             (due_date, stability, difficulty, reps, lapses, state, scheduled_days, card_id)
         )
+
+
+# STATS COMMANDS =============================================
+
+def get_card_stats(user_id):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT
+                   COUNT(*) AS total,
+                   SUM(state = 'new') AS new,
+                   SUM(state = 'learning') AS learning,
+                   SUM(state = 'review') AS review,
+                   SUM(state = 'relearning') AS relearning,
+                   SUM(due_date <= datetime('now')) AS due_today
+               FROM cards WHERE user_id = ?
+            """,
+            (user_id,)
+        )
+        row = cursor.fetchone()
+        return {k: (row[k] or 0) for k in row.keys()}
+
+
+def get_forecast(user_id, days=7):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT date(due_date) AS day, COUNT(*) AS cnt
+               FROM cards
+               WHERE user_id = ?
+                 AND due_date > datetime('now')
+                 AND due_date <= datetime('now', ? || ' days')
+               GROUP BY date(due_date)
+               ORDER BY day
+            """,
+            (user_id, str(days))
+        )
+        rows = {row['day']: row['cnt'] for row in cursor.fetchall()}
+
+    from datetime import date, timedelta
+    today = date.today()
+    return [
+        {'day': (today + timedelta(d)).isoformat(), 'count': rows.get((today + timedelta(d)).isoformat(), 0)}
+        for d in range(1, days + 1)
+    ]
 
 
 # DB CONNECTION ==============================================

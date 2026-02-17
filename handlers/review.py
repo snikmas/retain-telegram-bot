@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 import database.database as db
 from utils.constants import ReviewState, MAIN_MENU_BUTTONS
 from utils.srs import schedule, next_interval_label, AGAIN, HARD, GOOD, EASY
+from utils.telegram_helpers import safe_edit_text, safe_edit_caption, safe_send_text, safe_send_photo, safe_delete
 
 
 async def review_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,10 +18,11 @@ async def review_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cards = db.get_due_cards(user_id)
 
     if not cards:
-        await query.edit_message_text(
-            "Nothing due — you're all caught up.",
+        await safe_edit_text(
+            query,
+            "\u2728 Nothing due — you're all caught up!",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Menu", callback_data='main_menu')]
+                [InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')]
             ])
         )
         return ConversationHandler.END
@@ -31,8 +33,9 @@ async def review_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['review_total'] = len(cards)
 
     count = len(cards)
-    await query.edit_message_text(
-        f"{count} card{'s' if count != 1 else ''} to review. Let's go."
+    await safe_edit_text(
+        query,
+        f"\U0001f9e0 {count} card{'s' if count != 1 else ''} to review"
     )
 
     return await _show_front(query.message, context)
@@ -54,37 +57,26 @@ async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     back = card['back']
     is_photo = card.get('content_type') == 'photo'
 
-    deck_name = db.get_deck_name(card['deck_id']) or "—"
-    progress = f"{index + 1} / {len(cards)}"
+    deck_name = db.get_deck_name(card['deck_id']) or "\u2014"
+    progress = f"{index + 1}/{len(cards)}"
 
-    rating_buttons = _build_rating_buttons(card)
+    rating_buttons = InlineKeyboardMarkup(_build_rating_buttons(card))
 
     if is_photo:
         text = (
             f"{back if back else '(no back)'}\n\n"
-            f"{deck_name}  ·  {progress}"
+            f"\U0001f4c1 {deck_name}  \u00b7  {progress}"
         )
-        try:
-            await query.edit_message_caption(
-                caption=text,
-                reply_markup=InlineKeyboardMarkup(rating_buttons)
-            )
-        except Exception:
-            await query.message.reply_text(
-                text,
-                reply_markup=InlineKeyboardMarkup(rating_buttons)
-            )
+        ok = await safe_edit_caption(query, text, reply_markup=rating_buttons)
+        if not ok:
+            await safe_send_text(query.message, text, reply_markup=rating_buttons)
     else:
         text = (
-            f"{front}\n"
-            f"{'—' * min(len(front), 20)}\n"
-            f"{back}\n\n"
-            f"{deck_name}  ·  {progress}"
+            f"{front}\n\n"
+            f"\U0001f4a1 {back}\n\n"
+            f"\U0001f4c1 {deck_name}  \u00b7  {progress}"
         )
-        await query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(rating_buttons)
-        )
+        await safe_edit_text(query, text, reply_markup=rating_buttons)
 
     return ReviewState.RATING
 
@@ -130,11 +122,17 @@ async def rate_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if index + 1 >= len(cards):
         return await _finish_review(query, context)
 
+    next_card = cards[index + 1]
+    next_is_photo = next_card.get('content_type') == 'photo'
+    cur_is_photo = card.get('content_type') == 'photo'
+
+    # text→text: just edit in place (1 API call instead of 2)
+    if not cur_is_photo and not next_is_photo:
+        return await _show_front_edit(query, context)
+
+    # photo↔text transition: must delete + send new message
     chat_id = query.message.chat_id
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
+    await safe_delete(query.message)
 
     return await _show_front_in_chat(chat_id, context)
 
@@ -144,16 +142,16 @@ async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reviewed = context.user_data.get('review_index', 0)
     _cleanup_review_data(context)
 
-    text = f"Stopped after {reviewed} card{'s' if reviewed != 1 else ''}."
+    text = f"\u23f9 Stopped after {reviewed} card{'s' if reviewed != 1 else ''}"
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Menu", callback_data='main_menu')]
+        [InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')]
     ])
 
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=markup)
+        await safe_edit_text(update.callback_query, text, reply_markup=markup)
     else:
-        await update.message.reply_text(text, reply_markup=markup)
+        await safe_send_text(update.message, text, reply_markup=markup)
 
     return ConversationHandler.END
 
@@ -161,6 +159,10 @@ async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 # Private helpers
 # ============================================================
+
+def _progress_label(index, total):
+    return f"{index + 1}/{total}"
+
 
 async def _show_front(message, context):
     """Show the front of the current card."""
@@ -172,20 +174,40 @@ async def _show_front(message, context):
 
     card = cards[index]
     is_photo = card.get('content_type') == 'photo'
-    progress = f"{index + 1} / {len(cards)}"
+    progress = _progress_label(index, len(cards))
 
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answer", callback_data='show_answer')],
-        [InlineKeyboardButton("Stop", callback_data='cancel_review')]
+        [InlineKeyboardButton("\U0001f440 Show answer", callback_data='show_answer')],
+        [InlineKeyboardButton("\u23f9 Stop", callback_data='cancel_review')]
     ])
 
     if is_photo:
-        await message.reply_photo(
-            photo=card['front'], caption=progress, reply_markup=buttons
-        )
+        await safe_send_photo(message, card['front'], caption=progress, reply_markup=buttons)
     else:
         text = f"{card['front']}\n\n{progress}"
-        await message.reply_text(text, reply_markup=buttons)
+        await safe_send_text(message, text, reply_markup=buttons)
+
+    return ReviewState.SHOWING_FRONT
+
+
+async def _show_front_edit(query, context):
+    """Edit the current message to show the next card's front (text→text only)."""
+    cards = context.user_data.get('review_cards', [])
+    index = context.user_data.get('review_index', 0)
+
+    if index >= len(cards):
+        return ConversationHandler.END
+
+    card = cards[index]
+    progress = _progress_label(index, len(cards))
+
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("\U0001f440 Show answer", callback_data='show_answer')],
+        [InlineKeyboardButton("\u23f9 Stop", callback_data='cancel_review')]
+    ])
+
+    text = f"{card['front']}\n\n{progress}"
+    await safe_edit_text(query, text, reply_markup=buttons)
 
     return ReviewState.SHOWING_FRONT
 
@@ -200,22 +222,19 @@ async def _show_front_in_chat(chat_id, context):
 
     card = cards[index]
     is_photo = card.get('content_type') == 'photo'
-    progress = f"{index + 1} / {len(cards)}"
-    bot = context.bot
+    progress = _progress_label(index, len(cards))
+    target = (chat_id, context.bot)
 
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answer", callback_data='show_answer')],
-        [InlineKeyboardButton("Stop", callback_data='cancel_review')]
+        [InlineKeyboardButton("\U0001f440 Show answer", callback_data='show_answer')],
+        [InlineKeyboardButton("\u23f9 Stop", callback_data='cancel_review')]
     ])
 
     if is_photo:
-        await bot.send_photo(
-            chat_id=chat_id, photo=card['front'],
-            caption=progress, reply_markup=buttons
-        )
+        await safe_send_photo(target, card['front'], caption=progress, reply_markup=buttons)
     else:
         text = f"{card['front']}\n\n{progress}"
-        await bot.send_message(chat_id=chat_id, text=text, reply_markup=buttons)
+        await safe_send_text(target, text, reply_markup=buttons)
 
     return ReviewState.SHOWING_FRONT
 
@@ -225,21 +244,21 @@ def _build_rating_buttons(card):
     return [
         [
             InlineKeyboardButton(
-                f"Again  {next_interval_label(card, AGAIN)}",
+                f"\U0001f534 Again {next_interval_label(card, AGAIN)}",
                 callback_data=f'rate_{AGAIN}'
             ),
             InlineKeyboardButton(
-                f"Hard  {next_interval_label(card, HARD)}",
+                f"\U0001f7e0 Hard {next_interval_label(card, HARD)}",
                 callback_data=f'rate_{HARD}'
             ),
         ],
         [
             InlineKeyboardButton(
-                f"Good  {next_interval_label(card, GOOD)}",
+                f"\U0001f7e2 Good {next_interval_label(card, GOOD)}",
                 callback_data=f'rate_{GOOD}'
             ),
             InlineKeyboardButton(
-                f"Easy  {next_interval_label(card, EASY)}",
+                f"\U0001f535 Easy {next_interval_label(card, EASY)}",
                 callback_data=f'rate_{EASY}'
             ),
         ],
@@ -253,27 +272,14 @@ async def _finish_review(query, context):
 
     _cleanup_review_data(context)
 
-    if total == 0:
-        ratio_bar = ""
-    else:
-        filled = round(correct / total * 10)
-        ratio_bar = f"{'|' * filled}{'.' * (10 - filled)}"
-
-    text = (
-        f"Done.\n\n"
-        f"  Reviewed   {total}\n"
-        f"  Recalled   {correct} / {total}    [{ratio_bar}]\n"
-    )
+    text = f"\U0001f389 Done! {correct}/{total} recalled"
 
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("+ New Card", callback_data='add_card'),
-         InlineKeyboardButton("Menu", callback_data='main_menu')]
+        [InlineKeyboardButton("\U0001f4dd New Card", callback_data='add_card'),
+         InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')]
     ])
 
-    try:
-        await query.edit_message_text(text, reply_markup=markup)
-    except Exception:
-        await query.message.reply_text(text, reply_markup=markup)
+    await safe_edit_text(query, text, reply_markup=markup)
 
     return ConversationHandler.END
 

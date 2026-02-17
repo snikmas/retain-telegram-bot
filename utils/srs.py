@@ -166,7 +166,7 @@ def next_interval_label(card, rating):
     if days == 0:
         # Learning/relearning — show minutes
         due = datetime.strptime(result['due_date'], '%Y-%m-%d %H:%M:%S')
-        diff = due - datetime.utcnow()
+        diff = due - datetime.now()
         minutes = max(1, round(diff.total_seconds() / 60))
         return f"{minutes}m"
     elif days == 1:

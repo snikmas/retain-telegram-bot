@@ -6,6 +6,10 @@ from telegram.ext import ContextTypes, ConversationHandler
 import database.database as db
 import utils.utils as utils
 from utils.constants import AddCardState, PREVIEW_BUTTONS
+from utils.telegram_helpers import safe_edit_text, safe_send_text, safe_send_photo
+
+
+CARD_SIDE_MAX = 1000
 
 
 async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,7 +21,16 @@ async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['cur_card'] = utils.parse_photo(raw_content, card_type)
     else:
         raw_content = update.message.text
-        context.user_data['cur_card'] = utils.parse_text(raw_content, card_type)
+        parsed = utils.parse_text(raw_content, card_type)
+
+        if len(parsed['front']) > CARD_SIDE_MAX or len(parsed['back']) > CARD_SIDE_MAX:
+            await safe_send_text(
+                update.message,
+                f"\u26a0\ufe0f Too long — each side can be up to {CARD_SIDE_MAX} characters. Try again:"
+            )
+            return AddCardState.AWAITING_CONTENT
+
+        context.user_data['cur_card'] = parsed
 
     if context.user_data.get('default_deck_id'):
         await preview(update.message, context)
@@ -32,18 +45,19 @@ async def _show_deck_selection(message, context):
     decks = db.get_all_decks(user_id)
 
     if not decks:
-        await message.reply_text(
-            "You don't have any decks yet.\n"
-            "Type a name for your first one:"
+        await safe_send_text(
+            message,
+            "No decks yet \U0001f4ad\nType a name for your first one:"
         )
         return AddCardState.CREATING_DECK
 
     buttons = utils.get_buttons(decks, 'deck')
-    buttons.append([InlineKeyboardButton("+ New deck", callback_data='new_deck')])
+    buttons.append([InlineKeyboardButton("\u2795 New deck", callback_data='new_deck')])
     buttons.append([InlineKeyboardButton("Cancel", callback_data='cancel')])
 
-    await message.reply_text(
-        "Where should this card go?",
+    await safe_send_text(
+        message,
+        "\U0001f4c1 Which deck?",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
     return AddCardState.AWAITING_DECK
@@ -60,41 +74,37 @@ async def preview(message_or_query, context):
     deck_id = context.user_data.get('cur_deck_id') or context.user_data.get('default_deck_id')
     card_type = context.user_data.get('temp_type') or context.user_data.get('default_card_type', 'basic')
 
-    deck_name = db.get_deck_name(deck_id) if deck_id else "—"
+    deck_name = db.get_deck_name(deck_id) if deck_id else "\u2014"
     markup = InlineKeyboardMarkup(PREVIEW_BUTTONS)
 
     if is_photo:
         caption = (
-            f"--- card preview ---\n\n"
-            f"Back:  {back if back else '(empty)'}\n\n"
-            f"{deck_name}  /  {card_type}"
+            f"\U0001f5bc Preview\n\n"
+            f"Back: {back if back else '(empty)'}\n\n"
+            f"\U0001f4c1 {deck_name} \u00b7 {card_type}"
         )
 
         if hasattr(message_or_query, 'reply_photo'):
-            await message_or_query.reply_photo(
-                photo=front, caption=caption, reply_markup=markup
-            )
+            await safe_send_photo(message_or_query, front, caption=caption, reply_markup=markup)
         else:
-            chat_id = message_or_query.message.chat_id
-            await message_or_query.message.reply_photo(
-                photo=front, caption=caption, reply_markup=markup
-            )
-            await message_or_query.delete_message()
+            await safe_send_photo(message_or_query.message, front, caption=caption, reply_markup=markup)
+            try:
+                await message_or_query.delete_message()
+            except Exception:
+                pass
     else:
         back_display = back if back else "(empty)"
         preview_text = (
-            f"--- card preview ---\n\n"
-            f"Front\n"
-            f"{front}\n\n"
-            f"Back\n"
-            f"{back_display}\n\n"
-            f"{deck_name}  /  {card_type}"
+            f"\U0001f4cb Preview\n\n"
+            f"Front\n{front}\n\n"
+            f"Back\n{back_display}\n\n"
+            f"\U0001f4c1 {deck_name} \u00b7 {card_type}"
         )
 
         if hasattr(message_or_query, 'reply_text'):
-            await message_or_query.reply_text(preview_text, reply_markup=markup)
+            await safe_send_text(message_or_query, preview_text, reply_markup=markup)
         else:
-            await message_or_query.edit_message_text(preview_text, reply_markup=markup)
+            await safe_edit_text(message_or_query, preview_text, reply_markup=markup)
 
 
 async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,7 +112,7 @@ async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    await query.edit_message_text("Send me new text or a photo:")
+    await safe_edit_text(query, "\u270f\ufe0f Send me new text or a photo")
     return AddCardState.AWAITING_CONTENT
 
 
@@ -115,21 +125,40 @@ async def back_to_decks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     decks = db.get_all_decks(user_id)
 
     if not decks:
-        await query.edit_message_text(
-            "You don't have any decks yet.\n"
-            "Type a name for your first one:"
+        await safe_edit_text(
+            query,
+            "No decks yet \U0001f4ad\nType a name for your first one:"
         )
         return AddCardState.CREATING_DECK
 
     buttons = utils.get_buttons(decks, 'deck')
-    buttons.append([InlineKeyboardButton("+ New deck", callback_data='new_deck')])
+    buttons.append([InlineKeyboardButton("\u2795 New deck", callback_data='new_deck')])
     buttons.append([InlineKeyboardButton("Cancel", callback_data='cancel')])
 
-    await query.edit_message_text(
-        "Where should this card go?",
+    await safe_edit_text(
+        query,
+        "\U0001f4c1 Which deck?",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
     return AddCardState.AWAITING_DECK
+
+
+async def menu_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User clicks Menu while inside conversation — show menu and end."""
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data.pop('cur_card', None)
+    context.user_data.pop('cur_deck_id', None)
+    context.user_data.pop('temp_type', None)
+
+    from utils.constants import MAIN_MENU_BUTTONS
+    await safe_edit_text(
+        query,
+        "\U0001f3e0 Main menu",
+        reply_markup=InlineKeyboardMarkup(MAIN_MENU_BUTTONS)
+    )
+    return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -140,8 +169,8 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text("Cancelled.")
+        await safe_edit_text(update.callback_query, "\u274c Cancelled")
     else:
-        await update.message.reply_text("Cancelled.")
+        await safe_send_text(update.message, "\u274c Cancelled")
 
     return ConversationHandler.END
