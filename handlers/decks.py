@@ -1,17 +1,18 @@
 import logging
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 import database.database as db
 import handlers.flow_handlers as hand_flow
 from utils.constants import AddCardState
+from utils.telegram_helpers import safe_send_text
 
 
 DECK_NAME_MAX = 50
 
 
-async def create_deck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def create_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     deck_name = (update.message.text or '').strip()
 
     if not deck_name:
@@ -36,11 +37,26 @@ async def create_deck(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deck_id = db.create_deck_db(update.effective_user.id, deck_name)
     context.user_data['cur_deck_id'] = deck_id
 
-    await hand_flow.preview(update.message, context)
-    return AddCardState.CONFIRMATION_PREVIEW
+    # If the user already sent card content before creating the deck → show preview.
+    # If they created the deck first (e.g. via Change Settings), ask for content now.
+    if context.user_data.get('cur_card'):
+        await hand_flow.preview(update.message, context)
+        return AddCardState.CONFIRMATION_PREVIEW
+
+    card_type = context.user_data.get('default_card_type', 'basic')
+    await safe_send_text(
+        update.message,
+        f"\u2705 Deck \"{deck_name}\" created!\n\n"
+        f"\U0001f4dd Now send me the card content\n\n"
+        f"\U0001f4c1 {deck_name}  \u00b7  {card_type}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("\u2699\ufe0f Change", callback_data='change_settings')
+        ]]),
+    )
+    return AddCardState.AWAITING_CONTENT
 
 
-async def selected_deck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def selected_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
@@ -51,7 +67,7 @@ async def selected_deck(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AddCardState.CONFIRMATION_PREVIEW
 
 
-async def create_new_deck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def create_new_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 

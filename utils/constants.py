@@ -4,7 +4,6 @@ from telegram import InlineKeyboardButton
 
 class AddCardState(IntEnum):
     AWAITING_CONTENT = auto()
-    AWAITING_TYPE = auto()
     AWAITING_DECK = auto()
     CREATING_DECK = auto()
     CONFIRMATION_PREVIEW = auto()
@@ -13,13 +12,14 @@ class AddCardState(IntEnum):
 class ReviewState(IntEnum):
     SHOWING_FRONT = auto()
     RATING = auto()
+    DECK_PICKER = auto()
 
 
-CARD_TYPE_BUTTONS = [
-    [InlineKeyboardButton('Basic', callback_data='type_basic')],
-    [InlineKeyboardButton('Reverse', callback_data='type_reverse')],
-    [InlineKeyboardButton('Cloze', callback_data='type_cloze')]
-]
+class ManageState(IntEnum):
+    EDIT_CARD_CONTENT = auto()
+    EDIT_CARD_PREVIEW = auto()
+    RENAME_DECK = auto()
+
 
 PREVIEW_BUTTONS = [
     [InlineKeyboardButton("\u2714 Save", callback_data='save_card'),

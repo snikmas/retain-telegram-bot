@@ -1,7 +1,7 @@
-from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardButton, PhotoSize
 
 
-def parse_photo(photo_obj, card_type=None):
+def parse_photo(photo_obj: PhotoSize, card_type: str | None = None) -> dict[str, str | bool]:
     """
     For now, stores the file_id so we can send it back later.
     OCR / image-to-text can be added here.
@@ -9,7 +9,7 @@ def parse_photo(photo_obj, card_type=None):
     return {'front': photo_obj.file_id, 'back': '', 'is_photo': True}
 
 
-def parse_text(content, card_type=None):
+def parse_text(content: str, card_type: str | None = None) -> dict[str, str]:
     """
     returns: {'front': str, 'back': str}
     """
@@ -27,8 +27,8 @@ def parse_text(content, card_type=None):
     return {'front': text, 'back': ''}
 
 
-def get_buttons(items, prefix):
-    buttons = []
+def get_buttons(items: list[dict[str, str | int]], prefix: str) -> list[list[InlineKeyboardButton]]:
+    buttons: list[list[InlineKeyboardButton]] = []
     for item in items:
         buttons.append([
             InlineKeyboardButton(

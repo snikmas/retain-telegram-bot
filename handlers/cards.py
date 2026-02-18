@@ -5,11 +5,11 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 import database.database as db
 import utils.utils as utils
-from utils.constants import AddCardState, CARD_TYPE_BUTTONS
+from utils.constants import AddCardState
 from utils.telegram_helpers import safe_edit_text
 
 
-async def add_card_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_card_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
@@ -48,7 +48,7 @@ async def add_card_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AddCardState.AWAITING_CONTENT
 
 
-async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
@@ -83,7 +83,7 @@ async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AddCardState.AWAITING_CONTENT
 
 
-async def change_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def change_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
@@ -103,7 +103,7 @@ async def change_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AddCardState.AWAITING_DECK
 
 
-async def edit_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def edit_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 

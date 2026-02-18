@@ -8,6 +8,7 @@ Ratings: 'again' (1), 'hard' (2), 'good' (3), 'easy' (4)
 """
 
 from datetime import datetime, timedelta
+from typing import Any
 
 # Rating constants
 AGAIN = 1
@@ -24,7 +25,7 @@ MIN_DIFFICULTY = 1.0
 MAX_DIFFICULTY = 10.0
 
 
-def schedule(card, rating):
+def schedule(card: dict[str, Any], rating: int) -> dict[str, Any]:
     """
     Given a card dict (from DB) and a rating (1-4), returns updated SRS fields.
 
@@ -47,7 +48,13 @@ def schedule(card, rating):
     return _schedule_learning(rating, stability, difficulty, reps, lapses)
 
 
-def _schedule_learning(rating, stability, difficulty, reps, lapses):
+def _schedule_learning(
+    rating: int,
+    stability: float,
+    difficulty: float,
+    reps: int,
+    lapses: int,
+) -> dict[str, Any]:
     """Handle new and learning cards."""
     now = datetime.now()
 
@@ -75,8 +82,16 @@ def _schedule_learning(rating, stability, difficulty, reps, lapses):
         due = now + timedelta(days=4)
         return _result(due, stability, difficulty, reps + 1, lapses, 'review', 4)
 
+    return _result(now, 0.0, difficulty, reps, lapses, 'learning', 0)
 
-def _schedule_review(rating, stability, difficulty, reps, lapses):
+
+def _schedule_review(
+    rating: int,
+    stability: float,
+    difficulty: float,
+    reps: int,
+    lapses: int,
+) -> dict[str, Any]:
     """Handle cards in review state."""
     now = datetime.now()
     interval = max(stability, 1.0)
@@ -112,8 +127,16 @@ def _schedule_review(rating, stability, difficulty, reps, lapses):
         due = now + timedelta(days=days)
         return _result(due, new_interval, new_difficulty, reps + 1, lapses, 'review', days)
 
+    return _result(now, stability, difficulty, reps, lapses, 'review', 0)
 
-def _schedule_relearning(rating, stability, difficulty, reps, lapses):
+
+def _schedule_relearning(
+    rating: int,
+    stability: float,
+    difficulty: float,
+    reps: int,
+    lapses: int,
+) -> dict[str, Any]:
     """Handle cards that lapsed and are being relearned."""
     now = datetime.now()
 
@@ -138,15 +161,25 @@ def _schedule_relearning(rating, stability, difficulty, reps, lapses):
         due = now + timedelta(days=days)
         return _result(due, stability * 1.5, new_difficulty, reps + 1, lapses, 'review', days)
 
+    return _result(now, stability, difficulty, reps, lapses, 'relearning', 0)
 
-def _ease_from_difficulty(difficulty):
+
+def _ease_from_difficulty(difficulty: float) -> float:
     """Convert difficulty (1-10) to an ease multiplier (1.3-3.0)."""
     # difficulty 1 -> ease 3.0 (easy cards grow fast)
     # difficulty 10 -> ease 1.3 (hard cards grow slow)
     return 3.0 - (difficulty - 1.0) * (1.7 / 9.0)
 
 
-def _result(due, stability, difficulty, reps, lapses, state, scheduled_days):
+def _result(
+    due: datetime,
+    stability: float,
+    difficulty: float,
+    reps: int,
+    lapses: int,
+    state: str,
+    scheduled_days: int,
+) -> dict[str, Any]:
     return {
         'due_date': due.strftime('%Y-%m-%d %H:%M:%S'),
         'stability': round(stability, 2),
@@ -158,13 +191,16 @@ def _result(due, stability, difficulty, reps, lapses, state, scheduled_days):
     }
 
 
-def next_interval_label(card, rating):
-    """Human-readable label for what happens if user picks this rating."""
-    result = schedule(card, rating)
+def schedule_all_ratings(card: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    """Compute schedule results for all 4 ratings at once. Returns dict {rating: result}."""
+    return {r: schedule(card, r) for r in (AGAIN, HARD, GOOD, EASY)}
+
+
+def _format_interval(result: dict[str, Any]) -> str:
+    """Human-readable label from a schedule result."""
     days = result['scheduled_days']
 
     if days == 0:
-        # Learning/relearning — show minutes
         due = datetime.strptime(result['due_date'], '%Y-%m-%d %H:%M:%S')
         diff = due - datetime.now()
         minutes = max(1, round(diff.total_seconds() / 60))

@@ -12,7 +12,7 @@ from utils.telegram_helpers import safe_edit_text, safe_send_text, safe_send_pho
 CARD_SIDE_MAX = 1000
 
 
-async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logging.info("Got content")
 
     card_type = context.user_data.get('default_card_type')
@@ -39,7 +39,7 @@ async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await _show_deck_selection(update.message, context)
 
 
-async def _show_deck_selection(message, context):
+async def _show_deck_selection(message, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show deck selection buttons. Used by get_content and back_to_decks."""
     user_id = message.chat.id
     decks = db.get_all_decks(user_id)
@@ -63,7 +63,7 @@ async def _show_deck_selection(message, context):
     return AddCardState.AWAITING_DECK
 
 
-async def preview(message_or_query, context):
+async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Works with both Message and CallbackQuery. Handles photo and text cards."""
 
     cur_card = context.user_data.get('cur_card', {})
@@ -107,7 +107,7 @@ async def preview(message_or_query, context):
             await safe_edit_text(message_or_query, preview_text, reply_markup=markup)
 
 
-async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Back button from preview — ask user to re-send content."""
     query = update.callback_query
     await query.answer()
@@ -116,34 +116,7 @@ async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return AddCardState.AWAITING_CONTENT
 
 
-async def back_to_decks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Back button from preview when user has no default deck — re-show deck list."""
-    query = update.callback_query
-    await query.answer()
-
-    user_id = update.effective_user.id
-    decks = db.get_all_decks(user_id)
-
-    if not decks:
-        await safe_edit_text(
-            query,
-            "No decks yet \U0001f4ad\nType a name for your first one:"
-        )
-        return AddCardState.CREATING_DECK
-
-    buttons = utils.get_buttons(decks, 'deck')
-    buttons.append([InlineKeyboardButton("\u2795 New deck", callback_data='new_deck')])
-    buttons.append([InlineKeyboardButton("Cancel", callback_data='cancel')])
-
-    await safe_edit_text(
-        query,
-        "\U0001f4c1 Which deck?",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-    return AddCardState.AWAITING_DECK
-
-
-async def menu_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def menu_exit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """User clicks Menu while inside conversation — show menu and end."""
     query = update.callback_query
     await query.answer()
@@ -161,7 +134,7 @@ async def menu_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Works for both /cancel command (Message) and cancel button (CallbackQuery)."""
     context.user_data.pop('cur_card', None)
     context.user_data.pop('cur_deck_id', None)

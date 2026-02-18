@@ -6,13 +6,19 @@ If the API call fails, these recover gracefully instead of crashing the handler.
 """
 
 import logging
+from typing import Any
 
+from telegram import CallbackQuery, InlineKeyboardMarkup, Message
 from telegram.error import BadRequest, Forbidden, TimedOut, NetworkError
 
 logger = logging.getLogger(__name__)
 
 
-async def safe_edit_text(query, text, reply_markup=None):
+async def safe_edit_text(
+    query: CallbackQuery,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
     """Edit a callback query's message text. Falls back to reply on failure."""
     try:
         await query.edit_message_text(text, reply_markup=reply_markup)
@@ -31,7 +37,11 @@ async def safe_edit_text(query, text, reply_markup=None):
         return False
 
 
-async def safe_edit_caption(query, caption, reply_markup=None):
+async def safe_edit_caption(
+    query: CallbackQuery,
+    caption: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
     """Edit a callback query's message caption. Falls back to reply on failure."""
     try:
         await query.edit_message_caption(caption=caption, reply_markup=reply_markup)
@@ -47,11 +57,15 @@ async def safe_edit_caption(query, caption, reply_markup=None):
         return False
 
 
-async def safe_send_text(target, text, reply_markup=None):
-    """Send a text message. target can be Message, chat_id+bot tuple, etc."""
+async def safe_send_text(
+    target: Message | tuple[int, Any],
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
+    """Send a text message. target can be Message or (chat_id, bot) tuple."""
     try:
         if hasattr(target, 'reply_text'):
-            await target.reply_text(text, reply_markup=reply_markup)
+            await target.reply_text(text, reply_markup=reply_markup)  # type: ignore[union-attr]
         else:
             # target is (chat_id, bot)
             chat_id, bot = target
@@ -68,11 +82,16 @@ async def safe_send_text(target, text, reply_markup=None):
         return False
 
 
-async def safe_send_photo(target, photo, caption=None, reply_markup=None):
+async def safe_send_photo(
+    target: Message | tuple[int, Any],
+    photo: str,
+    caption: str | None = None,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
     """Send a photo message."""
     try:
         if hasattr(target, 'reply_photo'):
-            await target.reply_photo(photo=photo, caption=caption, reply_markup=reply_markup)
+            await target.reply_photo(photo=photo, caption=caption, reply_markup=reply_markup)  # type: ignore[union-attr]
         else:
             chat_id, bot = target
             await bot.send_photo(chat_id=chat_id, photo=photo, caption=caption, reply_markup=reply_markup)
@@ -88,7 +107,7 @@ async def safe_send_photo(target, photo, caption=None, reply_markup=None):
         return False
 
 
-async def safe_delete(message):
+async def safe_delete(message: Message) -> bool:
     """Delete a message. Returns True if deleted, False if already gone."""
     try:
         await message.delete()
@@ -99,7 +118,11 @@ async def safe_delete(message):
         return False
 
 
-async def _fallback_reply(query, text, reply_markup):
+async def _fallback_reply(
+    query: CallbackQuery,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None,
+) -> bool:
     """When edit fails, try sending a new message instead."""
     try:
         await query.message.reply_text(text, reply_markup=reply_markup)

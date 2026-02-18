@@ -1,5 +1,10 @@
 import logging
 
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
 from telegram import Update
 from telegram.error import BadRequest, Forbidden, TimedOut, NetworkError
 from telegram.ext import (
@@ -22,6 +27,7 @@ import handlers.review as hand_review
 import handlers.stats as hand_stats
 import handlers.decks_menu as hand_decks_menu
 import handlers.help as hand_help
+import handlers.manage as hand_manage
 from utils.constants import AddCardState, ReviewState
 
 
@@ -79,6 +85,11 @@ def main() -> None:
         per_message=False,
 
         states={
+            ReviewState.DECK_PICKER: [
+                CallbackQueryHandler(hand_review.review_deck_selected, pattern=r'^review_deck_\d+$'),
+                CallbackQueryHandler(hand_review.review_all_decks, pattern='^review_deck_all$'),
+            ],
+
             ReviewState.SHOWING_FRONT: [
                 CallbackQueryHandler(hand_review.show_answer, pattern='^show_answer$'),
                 CallbackQueryHandler(hand_review.cancel_review, pattern='^cancel_review$'),
@@ -93,19 +104,37 @@ def main() -> None:
         fallbacks=[CommandHandler('cancel', hand_review.cancel_review)]
     )
 
+    # Manage: edit card conversation
+    # Manage: rename deck conversation
     application.add_handler(CommandHandler('start', hand_start.start))
     application.add_handler(add_card_handler)
     application.add_handler(review_handler)
+    application.add_handler(hand_manage.edit_card_handler)
+    application.add_handler(hand_manage.rename_deck_handler)
 
-    # Standalone handlers (outside conversations)
+    # Slash commands
+    application.add_handler(CommandHandler('review', hand_review.review_command))
+    application.add_handler(CommandHandler('stats', hand_stats.stats_command))
+    application.add_handler(CommandHandler('decks', hand_decks_menu.decks_command))
+    application.add_handler(CommandHandler('help', hand_help.help_command))
+
+    # Standalone callback handlers
     application.add_handler(CallbackQueryHandler(hand_start.main_menu, pattern='^main_menu$'))
     application.add_handler(CallbackQueryHandler(hand_stats.stats_entry, pattern='^stats$'))
     application.add_handler(CallbackQueryHandler(hand_help.help_entry, pattern='^help$'))
-    application.add_handler(CommandHandler('help', hand_help.help_command))
 
-    # My Decks handlers
+    # My Decks
     application.add_handler(CallbackQueryHandler(hand_decks_menu.my_decks_entry, pattern='^my_decks$'))
-    application.add_handler(CallbackQueryHandler(hand_decks_menu.decks_page, pattern='^decks_page_\\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_decks_menu.decks_page, pattern=r'^decks_page_\d+$'))
+
+    # Manage: deck detail & card actions
+    application.add_handler(CallbackQueryHandler(hand_manage.deck_open, pattern=r'^deck_open_\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_manage.deck_cards_page, pattern=r'^deck_page_\d+_\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_manage.card_info, pattern=r'^card_info_\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_manage.card_delete_confirm, pattern=r'^card_delete_\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_manage.card_delete_yes, pattern=r'^card_delete_yes_\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_manage.deck_delete_confirm, pattern=r'^deck_delete_\d+$'))
+    application.add_handler(CallbackQueryHandler(hand_manage.deck_delete_yes, pattern=r'^deck_delete_yes_\d+$'))
 
     application.add_error_handler(error_handler)
     application.run_polling()

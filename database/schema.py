@@ -49,7 +49,7 @@ card_schema = '''
 user_schema = '''
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
+        username TEXT,
         name TEXT NOT NULL,
 
         default_deck_id INTEGER,
@@ -58,4 +58,11 @@ user_schema = '''
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (default_deck_id) REFERENCES decks(deck_id)
     )
+'''
+
+indexes_schema = '''
+    CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
+    CREATE INDEX IF NOT EXISTS idx_cards_user_id ON cards(user_id);
+    CREATE INDEX IF NOT EXISTS idx_cards_deck_id ON cards(deck_id);
+    CREATE INDEX IF NOT EXISTS idx_cards_due_date ON cards(user_id, due_date);
 '''

@@ -8,7 +8,7 @@ from utils.constants import MAIN_MENU_BUTTONS
 from utils.telegram_helpers import safe_edit_text, safe_send_text
 
 
-def _load_defaults(user_id, context, force=False):
+def _load_defaults(user_id: int, context: ContextTypes.DEFAULT_TYPE, force: bool = False) -> None:
     """Load user defaults from DB into user_data. Skips if already cached."""
     if not force and context.user_data.get('_defaults_loaded'):
         return
@@ -21,7 +21,7 @@ def _load_defaults(user_id, context, force=False):
     context.user_data['_defaults_loaded'] = True
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logging.info("Started /start")
 
     user_id = update.effective_user.id
@@ -55,33 +55,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def help_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback handler for 'How it works' button."""
-    query = update.callback_query
-    await query.answer()
 
-    text = (
-        "\u2753 How it works\n\n"
-        "\U0001f4dd Send me text or a photo — I'll turn it into a flashcard.\n"
-        "Use front | back or two lines to set both sides.\n\n"
-        "\U0001f9e0 When it's time, hit Review — I'll show the front "
-        "and you recall the answer.\n\n"
-        "\U0001f3af Rate how well you remembered. "
-        "I'll schedule the next review — easy cards appear less, "
-        "hard cards come back sooner.\n\n"
-        "That's it. The more you review, the more you retain."
-    )
-
-    await safe_edit_text(
-        query,
-        text,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')]
-        ])
-    )
-
-
-async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Callback handler for the 'Main Menu' button (outside conversation)."""
     query = update.callback_query
     await query.answer()

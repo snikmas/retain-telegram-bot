@@ -13,7 +13,7 @@ HELP_TEXT = (
 )
 
 
-async def help_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
@@ -25,7 +25,7 @@ async def help_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         HELP_TEXT,
         reply_markup=InlineKeyboardMarkup([
