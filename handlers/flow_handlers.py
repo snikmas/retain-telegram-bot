@@ -76,11 +76,13 @@ async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
     deck_name = db.get_deck_name(deck_id) if deck_id else "\u2014"
     markup = InlineKeyboardMarkup(PREVIEW_BUTTONS)
 
+    type_note = "\n<i>Creates 2 cards (original + flipped)</i>" if card_type == 'reverse' else ""
+
     if is_photo:
         caption = (
             f"<b>\U0001f5bc Preview</b>\n\n"
-            f"Back: {html.escape(back) if back else '<i>(empty)</i>'}\n\n"
-            f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>"
+            f"<b>Back:</b> {html.escape(back) if back else '<i>empty</i>'}\n\n"
+            f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>{type_note}"
         )
         if hasattr(message_or_query, 'reply_photo'):
             await safe_send_photo(message_or_query, front, caption=caption, reply_markup=markup)
@@ -91,12 +93,12 @@ async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
             except Exception:
                 pass
     else:
-        back_display = html.escape(back) if back else '<i>(empty)</i>'
+        back_display = html.escape(back) if back else '<i>empty</i>'
         preview_text = (
             f"<b>\U0001f4cb Preview</b>\n\n"
-            f"Front\n{html.escape(front)}\n\n"
-            f"Back\n{back_display}\n\n"
-            f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>"
+            f"<b>Front:</b> {html.escape(front)}\n"
+            f"<b>Back:</b> {back_display}\n\n"
+            f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>{type_note}"
         )
         if hasattr(message_or_query, 'reply_text'):
             await safe_send_text(message_or_query, preview_text, reply_markup=markup)

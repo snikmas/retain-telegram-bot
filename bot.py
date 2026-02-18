@@ -69,6 +69,9 @@ def main() -> None:
                 CallbackQueryHandler(hand_card.save_card, pattern='^save_card$'),
                 CallbackQueryHandler(hand_card.edit_card, pattern='^edit_card$'),
                 CallbackQueryHandler(hand_card.change_settings, pattern='^change_settings$'),
+                CallbackQueryHandler(hand_card.change_type_entry, pattern='^change_type$'),
+                CallbackQueryHandler(hand_card.set_card_type, pattern=r'^set_type_(basic|reverse)$'),
+                CallbackQueryHandler(hand_card.type_back, pattern='^type_back$'),
                 CallbackQueryHandler(hand_flow.back_to_content, pattern='^back$'),
                 CallbackQueryHandler(hand_flow.cancel, pattern='^cancel$'),
             ]
@@ -98,6 +101,7 @@ def main() -> None:
             ReviewState.RATING: [
                 CallbackQueryHandler(hand_review.rate_card, pattern='^rate_\\d$'),
                 CallbackQueryHandler(hand_review.cancel_review, pattern='^cancel_review$'),
+                CallbackQueryHandler(hand_review.edit_card_in_review, pattern=r'^edit_review_\d+$'),
             ],
         },
 

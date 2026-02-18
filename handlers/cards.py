@@ -5,6 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 
 import database.database as db
+import handlers.flow_handlers as hand_flow
 import utils.utils as utils
 from utils.constants import AddCardState
 from utils.telegram_helpers import safe_edit_text
@@ -53,7 +54,8 @@ async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
-    card_type = context.user_data.get('default_card_type') or context.user_data.get('temp_type')
+    # temp_type (explicit choice this session) takes priority over stored default
+    card_type = context.user_data.get('temp_type') or context.user_data.get('default_card_type', 'basic')
     deck_id = context.user_data.get('cur_deck_id') or context.user_data.get('default_deck_id')
 
     logging.info("Saving card...")
@@ -64,10 +66,17 @@ async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         update.effective_user.id
     )
 
+    user_id = update.effective_user.id
+
+    # Persist deck choice as new default
     if context.user_data.get('cur_deck_id'):
         new_deck_id = context.user_data['cur_deck_id']
         context.user_data['default_deck_id'] = new_deck_id
-        db.update_user_defaults(update.effective_user.id, deck_id=new_deck_id)
+        db.update_user_defaults(user_id, deck_id=new_deck_id)
+
+    # Persist type choice as new default
+    context.user_data['default_card_type'] = card_type
+    db.update_user_defaults(user_id, card_type=card_type)
 
     context.user_data.pop('cur_card', None)
     context.user_data.pop('cur_deck_id', None)
@@ -111,3 +120,51 @@ async def edit_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await safe_edit_text(query, "\u270f\ufe0f Send the new content")
 
     return AddCardState.AWAITING_CONTENT
+
+
+async def change_type_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show card type picker."""
+    query = update.callback_query
+    await query.answer()
+
+    current = context.user_data.get('temp_type') or context.user_data.get('default_card_type', 'basic')
+
+    def _label(name: str) -> str:
+        return f"\u2714 {name}" if current == name else name
+
+    await safe_edit_text(
+        query,
+        "<b>Card type</b>\n\n"
+        "Basic \u2014 one card (front \u2192 back)\n"
+        "Reverse \u2014 two cards (front \u2192 back <b>+</b> back \u2192 front)",
+        reply_markup=InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(_label("basic"), callback_data='set_type_basic'),
+                InlineKeyboardButton(_label("reverse"), callback_data='set_type_reverse'),
+            ],
+            [InlineKeyboardButton("\u2190 Back", callback_data='type_back')],
+        ])
+    )
+
+    return AddCardState.CONFIRMATION_PREVIEW
+
+
+async def set_card_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """User picked a type — store it and return to preview."""
+    query = update.callback_query
+    await query.answer()
+
+    card_type = query.data.split('_')[2]  # set_type_basic → 'basic', set_type_reverse → 'reverse'
+    context.user_data['temp_type'] = card_type
+
+    await hand_flow.preview(query, context)
+    return AddCardState.CONFIRMATION_PREVIEW
+
+
+async def type_back(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Back from type picker — re-show preview without changing anything."""
+    query = update.callback_query
+    await query.answer()
+
+    await hand_flow.preview(query, context)
+    return AddCardState.CONFIRMATION_PREVIEW

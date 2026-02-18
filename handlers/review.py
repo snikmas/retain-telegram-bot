@@ -193,19 +193,39 @@ async def rate_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    reviewed = context.user_data.get('review_index', 0)
     _cleanup_review_data(context)
 
-    text = f"Stopped after {reviewed} card{'s' if reviewed != 1 else ''}"
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Menu", callback_data='main_menu')]
-    ])
-
+    from handlers.start import build_main_menu
     if update.callback_query:
         await update.callback_query.answer()
+        user_id = update.callback_query.from_user.id
+        text, markup = build_main_menu(user_id)
         await safe_edit_text(update.callback_query, text, reply_markup=markup)
     else:
+        user_id = update.effective_user.id
+        text, markup = build_main_menu(user_id)
         await safe_send_text(update.message, text, reply_markup=markup)
+
+    return ConversationHandler.END
+
+
+async def edit_card_in_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Exit review and open the current card's deck detail for editing."""
+    query = update.callback_query
+    await query.answer()
+
+    card_id = int(query.data.split('_')[2])
+    user_id = update.effective_user.id
+    _cleanup_review_data(context)
+
+    card = db.get_card(card_id, user_id)
+    if card:
+        from handlers.manage import _show_deck_detail
+        await _show_deck_detail(query, context, card['deck_id'])
+    else:
+        from handlers.start import build_main_menu
+        text, markup = build_main_menu(user_id)
+        await safe_edit_text(query, text, reply_markup=markup)
 
     return ConversationHandler.END
 
@@ -329,6 +349,10 @@ def _build_rating_buttons(card: dict[str, Any]) -> list[list[InlineKeyboardButto
                 callback_data=f'rate_{EASY}'
             ),
         ],
+        [
+            InlineKeyboardButton("Edit", callback_data=f"edit_review_{card['card_id']}"),
+            InlineKeyboardButton("Stop", callback_data='cancel_review'),
+        ],
     ]
 
 
@@ -337,14 +361,11 @@ async def _finish_review(query: CallbackQuery, context: ContextTypes.DEFAULT_TYP
     correct = context.user_data.get('review_correct', 0)
     _cleanup_review_data(context)
 
-    await safe_edit_text(
-        query,
-        f"\U0001f389 <b>Done!</b> {correct}/{total} recalled",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("New Card", callback_data='add_card'),
-             InlineKeyboardButton("Menu", callback_data='main_menu')]
-        ])
-    )
+    from handlers.start import build_main_menu
+    user_id = query.from_user.id
+    menu_text, markup = build_main_menu(user_id)
+    text = f"\U0001f389 <b>Done</b>  \u00b7  {correct}/{total} recalled\n\n{menu_text}"
+    await safe_edit_text(query, text, reply_markup=markup)
     return ConversationHandler.END
 
 
