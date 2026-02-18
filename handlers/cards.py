@@ -1,3 +1,4 @@
+import html
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -32,17 +33,17 @@ async def add_card_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else:
             await safe_edit_text(
                 query,
-                "\U0001f4dd Send me text or a photo\n\n"
-                f"\U0001f4c1 {deck_name}  \u00b7  {card_type}",
+                f"\U0001f4dd Send me text or a photo\n\n"
+                f"<i>\U0001f4c1 {html.escape(deck_name)}  \u00b7  {card_type}</i>",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("\u2699\ufe0f Change", callback_data='change_settings')
+                    InlineKeyboardButton("Change", callback_data='change_settings')
                 ]])
             )
     else:
         await safe_edit_text(
             query,
             "\U0001f4dd Send me text or a photo\n\n"
-            "Tip: use front | back or two lines"
+            "<i>Tip: use front | back or two lines</i>"
         )
 
     return AddCardState.AWAITING_CONTENT
@@ -76,7 +77,7 @@ async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         query,
         "\u2714\ufe0f Saved! Send me another one",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')]
+            [InlineKeyboardButton("Menu", callback_data='main_menu')]
         ])
     )
 

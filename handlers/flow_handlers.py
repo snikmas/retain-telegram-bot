@@ -1,3 +1,4 @@
+import html
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -26,7 +27,7 @@ async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         if len(parsed['front']) > CARD_SIDE_MAX or len(parsed['back']) > CARD_SIDE_MAX:
             await safe_send_text(
                 update.message,
-                f"\u26a0\ufe0f Too long — each side can be up to {CARD_SIDE_MAX} characters. Try again:"
+                f"\u26a0\ufe0f Too long \u2014 each side can be up to {CARD_SIDE_MAX} characters. Try again:"
             )
             return AddCardState.AWAITING_CONTENT
 
@@ -40,7 +41,6 @@ async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 
 async def _show_deck_selection(message, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show deck selection buttons. Used by get_content and back_to_decks."""
     user_id = message.chat.id
     decks = db.get_all_decks(user_id)
 
@@ -65,7 +65,6 @@ async def _show_deck_selection(message, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Works with both Message and CallbackQuery. Handles photo and text cards."""
-
     cur_card = context.user_data.get('cur_card', {})
     is_photo = cur_card.get('is_photo', False)
     front = cur_card.get('front', '[empty]')
@@ -79,11 +78,10 @@ async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if is_photo:
         caption = (
-            f"\U0001f5bc Preview\n\n"
-            f"Back: {back if back else '(empty)'}\n\n"
-            f"\U0001f4c1 {deck_name} \u00b7 {card_type}"
+            f"<b>\U0001f5bc Preview</b>\n\n"
+            f"Back: {html.escape(back) if back else '<i>(empty)</i>'}\n\n"
+            f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>"
         )
-
         if hasattr(message_or_query, 'reply_photo'):
             await safe_send_photo(message_or_query, front, caption=caption, reply_markup=markup)
         else:
@@ -93,14 +91,13 @@ async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
             except Exception:
                 pass
     else:
-        back_display = back if back else "(empty)"
+        back_display = html.escape(back) if back else '<i>(empty)</i>'
         preview_text = (
-            f"\U0001f4cb Preview\n\n"
-            f"Front\n{front}\n\n"
+            f"<b>\U0001f4cb Preview</b>\n\n"
+            f"Front\n{html.escape(front)}\n\n"
             f"Back\n{back_display}\n\n"
-            f"\U0001f4c1 {deck_name} \u00b7 {card_type}"
+            f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>"
         )
-
         if hasattr(message_or_query, 'reply_text'):
             await safe_send_text(message_or_query, preview_text, reply_markup=markup)
         else:
@@ -108,7 +105,6 @@ async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Back button from preview — ask user to re-send content."""
     query = update.callback_query
     await query.answer()
 
@@ -117,7 +113,6 @@ async def back_to_content(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def menu_exit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """User clicks Menu while inside conversation — show menu and end."""
     query = update.callback_query
     await query.answer()
 
@@ -125,17 +120,13 @@ async def menu_exit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop('cur_deck_id', None)
     context.user_data.pop('temp_type', None)
 
-    from utils.constants import MAIN_MENU_BUTTONS
-    await safe_edit_text(
-        query,
-        "\U0001f3e0 Main menu",
-        reply_markup=InlineKeyboardMarkup(MAIN_MENU_BUTTONS)
-    )
+    from handlers.start import build_main_menu
+    text, markup = build_main_menu(update.effective_user.id)
+    await safe_edit_text(query, text, reply_markup=markup)
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Works for both /cancel command (Message) and cancel button (CallbackQuery)."""
     context.user_data.pop('cur_card', None)
     context.user_data.pop('cur_deck_id', None)
     context.user_data.pop('temp_type', None)

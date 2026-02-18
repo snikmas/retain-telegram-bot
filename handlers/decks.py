@@ -1,3 +1,4 @@
+import html
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -23,22 +24,21 @@ async def create_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
     if len(deck_name) > DECK_NAME_MAX:
         await update.message.reply_text(
-            f"\u26a0\ufe0f Too long — {DECK_NAME_MAX} characters max. Try again:"
+            f"\u26a0\ufe0f Too long \u2014 {DECK_NAME_MAX} characters max. Try again:"
         )
         return AddCardState.CREATING_DECK
 
     existing = db.get_deck_id(update.effective_user.id, deck_name)
     if existing:
         await update.message.reply_text(
-            f"\u26a0\ufe0f \"{deck_name}\" already exists. Pick a different name:"
+            f"\u26a0\ufe0f \"{html.escape(deck_name)}\" already exists. Pick a different name:",
+            parse_mode='HTML',
         )
         return AddCardState.CREATING_DECK
 
     deck_id = db.create_deck_db(update.effective_user.id, deck_name)
     context.user_data['cur_deck_id'] = deck_id
 
-    # If the user already sent card content before creating the deck → show preview.
-    # If they created the deck first (e.g. via Change Settings), ask for content now.
     if context.user_data.get('cur_card'):
         await hand_flow.preview(update.message, context)
         return AddCardState.CONFIRMATION_PREVIEW
@@ -46,11 +46,11 @@ async def create_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     card_type = context.user_data.get('default_card_type', 'basic')
     await safe_send_text(
         update.message,
-        f"\u2705 Deck \"{deck_name}\" created!\n\n"
+        f"\u2705 Deck <b>{html.escape(deck_name)}</b> created!\n\n"
         f"\U0001f4dd Now send me the card content\n\n"
-        f"\U0001f4c1 {deck_name}  \u00b7  {card_type}",
+        f"<i>\U0001f4c1 {html.escape(deck_name)}  \u00b7  {card_type}</i>",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("\u2699\ufe0f Change", callback_data='change_settings')
+            InlineKeyboardButton("Change", callback_data='change_settings')
         ]]),
     )
     return AddCardState.AWAITING_CONTENT

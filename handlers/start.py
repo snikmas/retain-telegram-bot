@@ -1,11 +1,43 @@
+import html
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 import database.database as db
-from utils.constants import MAIN_MENU_BUTTONS
 from utils.telegram_helpers import safe_edit_text, safe_send_text
+
+
+def build_main_menu(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Returns (message_text, markup) for the main menu.
+    Text includes a one-line stats summary when the user has cards.
+    """
+    stats = db.get_card_stats(user_id)
+    total = stats['total']
+    due = stats['due_today']
+
+    if total > 0:
+        due_part = f"  \u00b7  {due} due today" if due > 0 else "  \u00b7  all caught up"
+        stats_line = f"\n<i>{total} cards{due_part}</i>"
+    else:
+        stats_line = ""
+
+    text = f"\U0001f3e0 Main menu{stats_line}"
+
+    review_label = f'\U0001f9e0 Review \u00b7 {due} due' if due > 0 else '\U0001f9e0 Review'
+    markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('\U0001f4dd New Card', callback_data='add_card'),
+            InlineKeyboardButton(review_label, callback_data='review'),
+        ],
+        [
+            InlineKeyboardButton('\U0001f4da My Decks', callback_data='my_decks'),
+            InlineKeyboardButton('\u2753 How it works', callback_data='help'),
+        ],
+    ])
+
+    return text, markup
 
 
 def _load_defaults(user_id: int, context: ContextTypes.DEFAULT_TYPE, force: bool = False) -> None:
@@ -30,41 +62,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if user:
         _load_defaults(user_id, context)
-
+        _, markup = build_main_menu(user_id)
         await safe_send_text(
             update.message,
-            f"Hey {name} \U0001f44b",
-            reply_markup=InlineKeyboardMarkup(MAIN_MENU_BUTTONS)
+            f"Hey {html.escape(name)} \U0001f44b",
+            reply_markup=markup,
         )
 
     else:
         db.create_user(user_id, update.effective_user.username, name)
         context.user_data['default_card_type'] = 'basic'
 
-        buttons = [
-            [InlineKeyboardButton("\U0001f680 Let's go", callback_data='add_card')],
-        ]
-
         await safe_send_text(
             update.message,
-            f"Hey {name}, welcome to Retain \U0001f9e0\n\n"
+            f"Hey {html.escape(name)}, welcome to Retain \U0001f9e0\n\n"
             "I help you remember things using spaced repetition. "
-            "Send me anything — text, photos, notes — "
+            "Send me anything \u2014 text, photos, notes \u2014 "
             "and I'll quiz you before you forget.",
-            reply_markup=InlineKeyboardMarkup(buttons)
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("Let's go", callback_data='add_card')],
+            ])
         )
 
 
-
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Callback handler for the 'Main Menu' button (outside conversation)."""
+    """Callback handler for the 'Menu' button (outside conversation)."""
     query = update.callback_query
     await query.answer()
 
-    _load_defaults(update.effective_user.id, context)
+    user_id = update.effective_user.id
+    _load_defaults(user_id, context)
 
-    await safe_edit_text(
-        query,
-        "\U0001f3e0 Main menu",
-        reply_markup=InlineKeyboardMarkup(MAIN_MENU_BUTTONS)
-    )
+    text, markup = build_main_menu(user_id)
+    await safe_edit_text(query, text, reply_markup=markup)

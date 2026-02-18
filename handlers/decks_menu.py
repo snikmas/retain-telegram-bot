@@ -23,8 +23,8 @@ async def my_decks_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "\U0001f4da No decks yet\n\n"
             "Create your first card and a deck will appear here.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("\U0001f4dd New Card", callback_data='add_card')],
-                [InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')],
+                [InlineKeyboardButton("New Card", callback_data='add_card')],
+                [InlineKeyboardButton("Menu", callback_data='main_menu')],
             ])
         )
         return
@@ -53,8 +53,8 @@ async def decks_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             "\U0001f4da No decks yet\n\n"
             "Create your first card and a deck will appear here.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("\U0001f4dd New Card", callback_data='add_card')],
-                [InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')],
+                [InlineKeyboardButton("New Card", callback_data='add_card')],
+                [InlineKeyboardButton("Menu", callback_data='main_menu')],
             ])
         )
         return
@@ -99,7 +99,7 @@ def _build_decks_markup(
             nav.append(InlineKeyboardButton("\u2192", callback_data=f'decks_page_{page + 1}'))
         buttons.append(nav)
 
-    buttons.append([InlineKeyboardButton("\U0001f3e0 Menu", callback_data='main_menu')])
+    buttons.append([InlineKeyboardButton("Menu", callback_data='main_menu')])
 
     return header, InlineKeyboardMarkup(buttons)
 

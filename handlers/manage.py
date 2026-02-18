@@ -1,3 +1,4 @@
+import html
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
@@ -25,7 +26,6 @@ async def _show_deck_detail(
     deck_id: int,
     page: int = 0,
 ) -> None:
-    """Render the deck detail view (card list with edit/delete buttons)."""
     user_id = query.from_user.id
 
     deck_name = db.get_deck_name(deck_id)
@@ -34,7 +34,7 @@ async def _show_deck_detail(
             query,
             "Deck not found.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton('\U0001f4da My Decks', callback_data='my_decks')]
+                [InlineKeyboardButton('My Decks', callback_data='my_decks')]
             ]),
         )
         return
@@ -51,9 +51,9 @@ async def _show_deck_detail(
     page_cards = cards[start:start + CARDS_PER_PAGE]
 
     if total_pages > 1:
-        header = f"\U0001f4da {deck_name} \u00b7 {total} cards  ({page + 1}/{total_pages})"
+        header = f"<b>\U0001f4da {html.escape(deck_name)}</b> \u00b7 {total} cards  ({page + 1}/{total_pages})"
     else:
-        header = f"\U0001f4da {deck_name} \u00b7 {total} cards"
+        header = f"<b>\U0001f4da {html.escape(deck_name)}</b> \u00b7 {total} cards"
 
     buttons: list[list[InlineKeyboardButton]] = []
 
@@ -62,8 +62,8 @@ async def _show_deck_detail(
         label = _truncate(card['front'], FRONT_MAX)
         buttons.append([
             InlineKeyboardButton(label, callback_data=f'card_info_{cid}'),
-            InlineKeyboardButton('\u270f\ufe0f', callback_data=f'card_edit_{cid}'),
-            InlineKeyboardButton('\U0001f5d1\ufe0f', callback_data=f'card_delete_{cid}'),
+            InlineKeyboardButton('Edit', callback_data=f'card_edit_{cid}'),
+            InlineKeyboardButton('Del', callback_data=f'card_delete_{cid}'),
         ])
 
     if total_pages > 1:
@@ -76,10 +76,10 @@ async def _show_deck_detail(
             buttons.append(nav)
 
     buttons.append([
-        InlineKeyboardButton('\u270f\ufe0f Rename', callback_data=f'deck_rename_{deck_id}'),
-        InlineKeyboardButton('\U0001f5d1\ufe0f Delete deck', callback_data=f'deck_delete_{deck_id}'),
+        InlineKeyboardButton('Rename', callback_data=f'deck_rename_{deck_id}'),
+        InlineKeyboardButton('Delete deck', callback_data=f'deck_delete_{deck_id}'),
     ])
-    buttons.append([InlineKeyboardButton('\U0001f4da My Decks', callback_data='my_decks')])
+    buttons.append([InlineKeyboardButton('My Decks', callback_data='my_decks')])
 
     await safe_edit_text(query, header, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -89,23 +89,22 @@ async def _show_deck_detail(
 async def deck_open(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    deck_id = int(query.data.split('_')[2])  # deck_open_<id>
+    deck_id = int(query.data.split('_')[2])
     await _show_deck_detail(query, context, deck_id)
 
 
 async def deck_cards_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    parts = query.data.split('_')  # deck_page_<deck_id>_<page>
+    parts = query.data.split('_')
     deck_id = int(parts[2])
     page = int(parts[3])
     await _show_deck_detail(query, context, deck_id, page)
 
 
 async def card_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show full card content as a popup alert."""
     query = update.callback_query
-    card_id = int(query.data.split('_')[2])  # card_info_<id>
+    card_id = int(query.data.split('_')[2])
     user_id = update.effective_user.id
 
     card = db.get_card(card_id, user_id)
@@ -121,7 +120,7 @@ async def card_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def card_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    card_id = int(query.data.split('_')[2])  # card_delete_<id>
+    card_id = int(query.data.split('_')[2])
     deck_id = context.user_data.get('manage_deck_id', 0)
 
     await safe_edit_text(
@@ -139,7 +138,7 @@ async def card_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def card_delete_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    card_id = int(query.data.split('_')[3])  # card_delete_yes_<id>
+    card_id = int(query.data.split('_')[3])
     user_id = update.effective_user.id
 
     db.delete_card(card_id, user_id)
@@ -152,12 +151,12 @@ async def card_delete_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def deck_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    deck_id = int(query.data.split('_')[2])  # deck_delete_<id>
+    deck_id = int(query.data.split('_')[2])
 
     deck_name = db.get_deck_name(deck_id) or 'this deck'
     await safe_edit_text(
         query,
-        f"\U0001f5d1\ufe0f Delete deck \"{deck_name}\" and all its cards?\nThis cannot be undone.",
+        f"\U0001f5d1\ufe0f Delete deck <b>{html.escape(deck_name)}</b> and all its cards?\n<i>This cannot be undone.</i>",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton('Yes, delete', callback_data=f'deck_delete_yes_{deck_id}'),
@@ -170,7 +169,7 @@ async def deck_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def deck_delete_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    deck_id = int(query.data.split('_')[3])  # deck_delete_yes_<id>
+    deck_id = int(query.data.split('_')[3])
     user_id = update.effective_user.id
 
     db.delete_deck(deck_id, user_id)
@@ -181,7 +180,7 @@ async def deck_delete_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         query,
         "\U0001f5d1\ufe0f Deck deleted.",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton('\U0001f4da My Decks', callback_data='my_decks')]
+            [InlineKeyboardButton('My Decks', callback_data='my_decks')]
         ]),
     )
 
@@ -191,7 +190,7 @@ async def deck_delete_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def start_edit_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    card_id = int(query.data.split('_')[2])  # card_edit_<id>
+    card_id = int(query.data.split('_')[2])
     user_id = update.effective_user.id
 
     card = db.get_card(card_id, user_id)
@@ -201,15 +200,15 @@ async def start_edit_card(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     context.user_data['editing_card_id'] = card_id
 
-    front = card['front']
-    back = card['back'] or ''
+    front = html.escape(card['front'])
+    back = html.escape(card['back']) if card['back'] else '<i>(empty)</i>'
 
     await safe_edit_text(
         query,
-        f"\u270f\ufe0f Edit card\n\n"
+        f"\u270f\ufe0f <b>Edit card</b>\n\n"
         f"Front: {front}\n"
-        f"Back: {back or '(empty)'}\n\n"
-        "Send new content (front | back or two lines):\n/cancel to abort",
+        f"Back: {back}\n\n"
+        "<i>Send new content (front | back or two lines):\n/cancel to abort</i>",
     )
     return ManageState.EDIT_CARD_CONTENT
 
@@ -219,12 +218,12 @@ async def receive_edit_content(update: Update, context: ContextTypes.DEFAULT_TYP
     parsed = parse_text(text)
     context.user_data['edit_card_parsed'] = parsed
 
-    front = parsed['front']
-    back = parsed['back'] or '(empty)'
+    front = html.escape(parsed['front'])
+    back = html.escape(parsed['back']) if parsed['back'] else '<i>(empty)</i>'
 
     await safe_send_text(
         update.message,
-        f"\U0001f4cb Preview\n\nFront: {front}\nBack: {back}",
+        f"<b>\U0001f4cb Preview</b>\n\nFront: {front}\nBack: {back}",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton('\u2714 Save', callback_data='save_edit'),
@@ -270,14 +269,14 @@ async def cancel_edit_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def start_rename_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    deck_id = int(query.data.split('_')[2])  # deck_rename_<id>
+    deck_id = int(query.data.split('_')[2])
 
     deck_name = db.get_deck_name(deck_id) or 'this deck'
     context.user_data['renaming_deck_id'] = deck_id
 
     await safe_edit_text(
         query,
-        f"\u270f\ufe0f Rename \"{deck_name}\"\n\nSend the new name:\n/cancel to abort",
+        f"\u270f\ufe0f Rename <b>{html.escape(deck_name)}</b>\n\n<i>Send the new name:\n/cancel to abort</i>",
     )
     return ManageState.RENAME_DECK
 
@@ -301,9 +300,9 @@ async def receive_rename(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await safe_send_text(
         update.message,
-        f"\u2714\ufe0f Renamed to \"{new_name}\"",
+        f"\u2714\ufe0f Renamed to <b>{html.escape(new_name)}</b>",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton('\U0001f4da My Decks', callback_data='my_decks')]
+            [InlineKeyboardButton('My Decks', callback_data='my_decks')]
         ]),
     )
     return ConversationHandler.END
@@ -323,7 +322,7 @@ async def cancel_manage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return ConversationHandler.END
 
 
-# ── ConversationHandlers (imported in bot.py) ─────────────────
+# ── ConversationHandlers ──────────────────────────────────────
 
 edit_card_handler = ConversationHandler(
     entry_points=[CallbackQueryHandler(start_edit_card, pattern=r'^card_edit_\d+$')],
