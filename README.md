@@ -38,7 +38,6 @@ Create `.env`:
 
 ```
 TELEGRAM_BOT_TOKEN=your_token_here
-# PROXY_URL=socks5://... (optional)
 ```
 
 Get a token from [@BotFather](https://t.me/BotFather).

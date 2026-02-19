@@ -19,15 +19,31 @@ async def get_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     card_type = context.user_data.get('default_card_type')
     if update.message.photo:
         raw_content = update.message.photo[-1]
-        context.user_data['cur_card'] = utils.parse_photo(raw_content, card_type)
+        context.user_data['cur_card'] = utils.parse_photo(raw_content, update.message.caption)
     else:
         raw_content = update.message.text
         parsed = utils.parse_text(raw_content, card_type)
+
+        if not parsed['front']:
+            await safe_send_text(update.message, "\u26a0\ufe0f Card can't be empty. Send some text:")
+            return AddCardState.AWAITING_CONTENT
 
         if len(parsed['front']) > CARD_SIDE_MAX or len(parsed['back']) > CARD_SIDE_MAX:
             await safe_send_text(
                 update.message,
                 f"\u26a0\ufe0f Too long \u2014 each side can be up to {CARD_SIDE_MAX} characters. Try again:"
+            )
+            return AddCardState.AWAITING_CONTENT
+
+        if not parsed['back']:
+            front_hint = html.escape(parsed['front'][:20])
+            await safe_send_text(
+                update.message,
+                f"\u26a0\ufe0f Cards need two sides.\n\n"
+                f"Use <code>|</code> to separate front from back:\n"
+                f"<code>{front_hint} | meaning here</code>\n\n"
+                f"Or send two lines:\n"
+                f"<code>{front_hint}\nmeaning here</code>"
             )
             return AddCardState.AWAITING_CONTENT
 
@@ -79,10 +95,12 @@ async def preview(message_or_query, context: ContextTypes.DEFAULT_TYPE) -> None:
     type_note = "\n<i>Creates 2 cards (original + flipped)</i>" if card_type == 'reverse' else ""
 
     if is_photo:
+        no_caption_warning = "\n\u26a0\ufe0f <i>No caption \u2014 the answer will be empty during review</i>" if not back else ""
         caption = (
             f"<b>\U0001f5bc Preview</b>\n\n"
             f"<b>Back:</b> {html.escape(back) if back else '<i>empty</i>'}\n\n"
             f"<i>\U0001f4c1 {html.escape(deck_name or '')} \u00b7 {card_type}</i>{type_note}"
+            f"{no_caption_warning}"
         )
         if hasattr(message_or_query, 'reply_photo'):
             await safe_send_photo(message_or_query, front, caption=caption, reply_markup=markup)
@@ -133,10 +151,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop('cur_deck_id', None)
     context.user_data.pop('temp_type', None)
 
+    from handlers.start import build_main_menu
+    text, markup = build_main_menu(update.effective_user.id)
+
     if update.callback_query:
         await update.callback_query.answer()
-        await safe_edit_text(update.callback_query, "\u274c Cancelled")
+        await safe_edit_text(update.callback_query, text, reply_markup=markup)
     else:
-        await safe_send_text(update.message, "\u274c Cancelled")
+        await safe_send_text(update.message, text, reply_markup=markup)
 
     return ConversationHandler.END

@@ -6,34 +6,24 @@ from telegram.ext import ContextTypes
 
 import database.database as db
 import handlers.flow_handlers as hand_flow
-from utils.constants import AddCardState
-from utils.telegram_helpers import safe_send_text
-
-
-DECK_NAME_MAX = 50
+from utils.constants import AddCardState, DECK_NAME_MAX
+from utils.telegram_helpers import safe_send_text, safe_edit_text
 
 
 async def create_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     deck_name = (update.message.text or '').strip()
 
     if not deck_name:
-        await update.message.reply_text(
-            "\u26a0\ufe0f Deck name can't be empty. Try again:"
-        )
+        await safe_send_text(update.message, "\u26a0\ufe0f Deck name can't be empty. Try again:")
         return AddCardState.CREATING_DECK
 
     if len(deck_name) > DECK_NAME_MAX:
-        await update.message.reply_text(
-            f"\u26a0\ufe0f Too long \u2014 {DECK_NAME_MAX} characters max. Try again:"
-        )
+        await safe_send_text(update.message, f"\u26a0\ufe0f Too long \u2014 {DECK_NAME_MAX} characters max. Try again:")
         return AddCardState.CREATING_DECK
 
     existing = db.get_deck_id(update.effective_user.id, deck_name)
     if existing:
-        await update.message.reply_text(
-            f"\u26a0\ufe0f \"{html.escape(deck_name)}\" already exists. Pick a different name:",
-            parse_mode='HTML',
-        )
+        await safe_send_text(update.message, f"\u26a0\ufe0f <b>{html.escape(deck_name)}</b> already exists. Pick a different name:")
         return AddCardState.CREATING_DECK
 
     deck_id = db.create_deck_db(update.effective_user.id, deck_name)
@@ -71,5 +61,5 @@ async def create_new_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
 
-    await query.edit_message_text("\u270f\ufe0f Name for the new deck:")
+    await safe_edit_text(query, "\u270f\ufe0f Name for the new deck:")
     return AddCardState.CREATING_DECK

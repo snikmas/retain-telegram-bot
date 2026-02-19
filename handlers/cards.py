@@ -29,7 +29,7 @@ async def add_card_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "Send a card and pick a new one."
             )
             context.user_data.pop('default_deck_id', None)
-            db.update_user_defaults(update.effective_user.id, deck_id=None)
+            db.clear_default_deck(update.effective_user.id)
 
         else:
             await safe_edit_text(
@@ -44,7 +44,8 @@ async def add_card_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await safe_edit_text(
             query,
             "\U0001f4dd Send me text or a photo\n\n"
-            "<i>Tip: use front | back or two lines</i>"
+            "<i>Text: use <code>front | back</code> or two lines\n"
+            "Photo: add a caption \u2014 it becomes the back side</i>"
         )
 
     return AddCardState.AWAITING_CONTENT
@@ -54,17 +55,22 @@ async def save_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
-    # temp_type (explicit choice this session) takes priority over stored default
-    card_type = context.user_data.get('temp_type') or context.user_data.get('default_card_type', 'basic')
+    cur_card = context.user_data.get('cur_card')
     deck_id = context.user_data.get('cur_deck_id') or context.user_data.get('default_deck_id')
 
+    if not cur_card or not deck_id:
+        await safe_edit_text(
+            query,
+            "\u26a0\ufe0f Session expired \u2014 please start over.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Menu', callback_data='main_menu')]])
+        )
+        return ConversationHandler.END
+
+    # temp_type (explicit choice this session) takes priority over stored default
+    card_type = context.user_data.get('temp_type') or context.user_data.get('default_card_type', 'basic')
+
     logging.info("Saving card...")
-    db.save_card(
-        context.user_data.get('cur_card'),
-        card_type,
-        deck_id,
-        update.effective_user.id
-    )
+    db.save_card(cur_card, card_type, deck_id, update.effective_user.id)
 
     user_id = update.effective_user.id
 
@@ -129,14 +135,17 @@ async def change_type_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     current = context.user_data.get('temp_type') or context.user_data.get('default_card_type', 'basic')
 
+    _EMOJIS = {'basic': '\U0001f4c4', 'reverse': '\U0001f501'}
+
     def _label(name: str) -> str:
-        return f"\u2714 {name}" if current == name else name
+        base = f"{_EMOJIS[name]} {name.capitalize()}"
+        return f"\u2714 {base}" if current == name else base
 
     await safe_edit_text(
         query,
         "<b>Card type</b>\n\n"
-        "Basic \u2014 one card (front \u2192 back)\n"
-        "Reverse \u2014 two cards (front \u2192 back <b>+</b> back \u2192 front)",
+        "\U0001f4c4 Basic \u2014 one card (front \u2192 back)\n"
+        "\U0001f501 Reverse \u2014 two cards (front \u2192 back <b>+</b> back \u2192 front)",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(_label("basic"), callback_data='set_type_basic'),

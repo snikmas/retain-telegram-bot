@@ -28,7 +28,7 @@ import handlers.stats as hand_stats
 import handlers.decks_menu as hand_decks_menu
 import handlers.help as hand_help
 import handlers.manage as hand_manage
-from utils.constants import AddCardState, ReviewState
+from utils.constants import AddCardState, ReviewState, ManageState
 
 
 def main() -> None:
@@ -77,7 +77,7 @@ def main() -> None:
             ]
         },
 
-        fallbacks=[CommandHandler('cancel', hand_flow.cancel)]
+        fallbacks=[CommandHandler('cancel', hand_flow.cancel), CommandHandler('start', hand_start.force_start)]
     )
 
     # Review conversation
@@ -103,9 +103,18 @@ def main() -> None:
                 CallbackQueryHandler(hand_review.cancel_review, pattern='^cancel_review$'),
                 CallbackQueryHandler(hand_review.edit_card_in_review, pattern=r'^edit_review_\d+$'),
             ],
+
+            ReviewState.EDITING_CARD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, hand_review.receive_review_edit_content),
+            ],
+
+            ReviewState.EDITING_CARD_PREVIEW: [
+                CallbackQueryHandler(hand_review.save_review_edit, pattern='^save_review_edit$'),
+                CallbackQueryHandler(hand_review.cancel_review_edit, pattern='^cancel_review_edit$'),
+            ],
         },
 
-        fallbacks=[CommandHandler('cancel', hand_review.cancel_review)]
+        fallbacks=[CommandHandler('cancel', hand_review.cancel_review), CommandHandler('start', hand_start.force_start)]
     )
 
     # Manage: edit card conversation
@@ -115,8 +124,11 @@ def main() -> None:
     application.add_handler(review_handler)
     application.add_handler(hand_manage.edit_card_handler)
     application.add_handler(hand_manage.rename_deck_handler)
+    application.add_handler(hand_manage.pick_edit_handler)
+    application.add_handler(hand_manage.pick_delete_handler)
 
     # Slash commands
+    application.add_handler(CommandHandler('clear', hand_start.clear_command))
     application.add_handler(CommandHandler('review', hand_review.review_command))
     application.add_handler(CommandHandler('stats', hand_stats.stats_command))
     application.add_handler(CommandHandler('decks', hand_decks_menu.decks_command))
@@ -134,8 +146,6 @@ def main() -> None:
     # Manage: deck detail & card actions
     application.add_handler(CallbackQueryHandler(hand_manage.deck_open, pattern=r'^deck_open_\d+$'))
     application.add_handler(CallbackQueryHandler(hand_manage.deck_cards_page, pattern=r'^deck_page_\d+_\d+$'))
-    application.add_handler(CallbackQueryHandler(hand_manage.card_info, pattern=r'^card_info_\d+$'))
-    application.add_handler(CallbackQueryHandler(hand_manage.card_delete_confirm, pattern=r'^card_delete_\d+$'))
     application.add_handler(CallbackQueryHandler(hand_manage.card_delete_yes, pattern=r'^card_delete_yes_\d+$'))
     application.add_handler(CallbackQueryHandler(hand_manage.deck_delete_confirm, pattern=r'^deck_delete_\d+$'))
     application.add_handler(CallbackQueryHandler(hand_manage.deck_delete_yes, pattern=r'^deck_delete_yes_\d+$'))

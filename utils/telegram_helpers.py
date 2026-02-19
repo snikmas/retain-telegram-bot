@@ -4,7 +4,19 @@ Safe wrappers for Telegram API calls.
 Every handler uses these instead of raw query.edit_message_text / bot.send_message.
 If the API call fails, these recover gracefully instead of crashing the handler.
 
-parse_mode defaults to 'HTML' — callers must html.escape() any user-supplied content.
+DISCIPLINE RULE — all callers must:
+  - Pass parse_mode='HTML' (the default here)
+  - Wrap every piece of user-supplied text in html.escape() before embedding it
+    in a format string. User content = anything from card['front'], card['back'],
+    deck_name, username, or any field read from the DB.
+  - Never pass raw f-strings with user data directly — they will silently corrupt
+    or raise BadRequest if the content contains <, >, or &.
+
+Safe pattern:
+    await safe_edit_text(query, f"Deck: <b>{html.escape(deck_name)}</b>")
+
+Unsafe (never do this):
+    await safe_edit_text(query, f"Deck: <b>{deck_name}</b>")
 """
 
 import logging

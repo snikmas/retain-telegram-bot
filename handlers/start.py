@@ -2,7 +2,7 @@ import html
 import logging
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 
 import database.database as db
 from utils.telegram_helpers import safe_edit_text, safe_send_text
@@ -17,13 +17,14 @@ def build_main_menu(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
     total = stats['total']
     due = stats['due_today']
 
-    if total > 0:
-        due_part = f"  \u00b7  {due} due today" if due > 0 else "  \u00b7  all caught up"
-        stats_line = f"\n<i>{total} cards{due_part}</i>"
+    if total == 0:
+        text = "\U0001f4da <b>Retain</b>\n\n<i>No cards yet \u2014 add your first one!</i>"
+    elif due == 0:
+        text = f"\u2705 <b>All caught up!</b>\n\n<i>{total} cards in your collection</i>"
+    elif due == 1:
+        text = f"\U0001f9e0 <b>1 card to review</b>\n\n<i>{total} cards total</i>"
     else:
-        stats_line = ""
-
-    text = f"\U0001f3e0 Main menu{stats_line}"
+        text = f"\U0001f9e0 <b>{due} cards to review</b>\n\n<i>{total} cards total</i>"
 
     review_label = f'\U0001f9e0 Review \u00b7 {due} due' if due > 0 else '\U0001f9e0 Review'
     markup = InlineKeyboardMarkup([
@@ -83,6 +84,40 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 [InlineKeyboardButton("Let's go", callback_data='add_card')],
             ])
         )
+
+
+_CONV_KEYS = (
+    # add-card flow
+    'cur_card', 'cur_deck_id', 'temp_type',
+    # review flow
+    'review_cards', 'review_index', 'review_correct', 'review_total',
+    # manage flow
+    'editing_card_id', 'edit_card_parsed', 'editing_card_photo', 'edit_card_is_photo',
+    'renaming_deck_id', 'manage_deck_id', 'manage_deck_page', 'manage_page_cards',
+    # review edit flow
+    'review_editing_is_photo', 'review_edit_is_photo',
+)
+
+
+async def _reset_and_send_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear all in-progress conversation state and send a fresh main menu."""
+    for key in _CONV_KEYS:
+        context.user_data.pop(key, None)
+    user_id = update.effective_user.id
+    _load_defaults(user_id, context)
+    text, markup = build_main_menu(user_id)
+    await safe_send_text(update.message, text, reply_markup=markup)
+
+
+async def force_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """ConversationHandler fallback — abort current flow and show main menu."""
+    await _reset_and_send_menu(update, context)
+    return ConversationHandler.END
+
+
+async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/clear — reset any stuck state and show a fresh main menu."""
+    await _reset_and_send_menu(update, context)
 
 
 async def main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

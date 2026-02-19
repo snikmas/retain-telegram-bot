@@ -1,6 +1,7 @@
 import html
 import logging
 from collections import defaultdict
+from datetime import datetime
 from typing import Any
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, Message
@@ -8,6 +9,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 import database.database as db
 from utils.constants import ReviewState
+from utils.utils import parse_text
 from utils.srs import schedule, schedule_all_ratings, _format_interval, AGAIN, HARD, GOOD, EASY
 from utils.telegram_helpers import safe_edit_text, safe_edit_caption, safe_send_text, safe_send_photo, safe_delete
 
@@ -132,7 +134,7 @@ async def show_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     else:
         text = (
             f"<b>{front}</b>\n\n"
-            f"&#8212; &#8212; &#8212;\n\n"
+            f"<b>\u2022 \u2022 \u2022 \u2022 \u2022</b>\n\n"
             f"{back}\n\n"
             f"<i>\U0001f4c1 {deck_name}  \u00b7  {progress}</i>"
         )
@@ -156,6 +158,16 @@ async def rate_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     card = cards[index]
     result = schedule(card, rating)
 
+    # A-6: compute elapsed_days from scheduled_days + overdue days
+    elapsed_days = card.get('scheduled_days', 0)
+    due_date_str = card.get('due_date', '')
+    if due_date_str and elapsed_days > 0:
+        try:
+            overdue = max(0, (datetime.now() - datetime.strptime(due_date_str, '%Y-%m-%d %H:%M:%S')).days)
+            elapsed_days += overdue
+        except ValueError:
+            pass
+
     db.update_card_srs(
         card['card_id'],
         result['due_date'],
@@ -165,9 +177,10 @@ async def rate_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         result['lapses'],
         result['state'],
         result['scheduled_days'],
+        elapsed_days,
     )
 
-    if rating >= GOOD:
+    if rating > AGAIN:  # Hard, Good, Easy all count as recalled; Again does not
         context.user_data['review_correct'] = context.user_data.get('review_correct', 0) + 1
 
     logging.info(
@@ -210,23 +223,119 @@ async def cancel_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 
 async def edit_card_in_review(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Exit review and open the current card's deck detail for editing."""
+    """Show an inline edit prompt for this specific card without leaving review."""
     query = update.callback_query
     await query.answer()
 
     card_id = int(query.data.split('_')[2])
     user_id = update.effective_user.id
-    _cleanup_review_data(context)
 
     card = db.get_card(card_id, user_id)
-    if card:
-        from handlers.manage import _show_deck_detail
-        await _show_deck_detail(query, context, card['deck_id'])
-    else:
+    if not card:
         from handlers.start import build_main_menu
+        _cleanup_review_data(context)
         text, markup = build_main_menu(user_id)
         await safe_edit_text(query, text, reply_markup=markup)
+        return ConversationHandler.END
 
+    context.user_data['review_editing_card_id'] = card_id
+
+    if card.get('content_type') == 'photo':
+        context.user_data['review_editing_is_photo'] = True
+        current_caption = html.escape(card['back']) if card['back'] else '<i>(empty)</i>'
+        await safe_edit_text(
+            query,
+            f"\u270f\ufe0f <b>Edit caption</b>\n\n{current_caption}\n\n"
+            f"<i>Send the new caption.\n/cancel to abort</i>",
+        )
+    else:
+        context.user_data.pop('review_editing_is_photo', None)
+        raw_front = card['front']
+        raw_back = card['back'] or ''
+        copyable = f"{raw_front} | {raw_back}" if raw_back else raw_front
+        await safe_edit_text(
+            query,
+            f"\u270f\ufe0f <b>Edit card</b>\n\n"
+            f"<code>{html.escape(copyable)}</code>\n\n"
+            f"<i>Tap the text above to copy, edit and send.\n/cancel to abort</i>",
+        )
+    return ReviewState.EDITING_CARD
+
+
+async def receive_review_edit_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+    is_photo = context.user_data.pop('review_editing_is_photo', False)
+
+    if is_photo:
+        context.user_data['review_edit_is_photo'] = True
+        context.user_data['review_edit_parsed'] = {'front': None, 'back': text}
+        back_display = html.escape(text) if text else '<i>(empty)</i>'
+        await safe_send_text(
+            update.message,
+            f"<b>\U0001f4cb Preview</b>\n\nCaption: {back_display}",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('\u2714 Save', callback_data='save_review_edit'),
+                InlineKeyboardButton('\u2716 Cancel', callback_data='cancel_review_edit'),
+            ]]),
+        )
+        return ReviewState.EDITING_CARD_PREVIEW
+
+    parsed = parse_text(text)
+    if not parsed['front']:
+        await safe_send_text(update.message, "\u26a0\ufe0f Card can't be empty. Try again:")
+        return ReviewState.EDITING_CARD
+
+    context.user_data['review_edit_is_photo'] = False
+    context.user_data['review_edit_parsed'] = parsed
+
+    front = html.escape(parsed['front'])
+    back = html.escape(parsed['back']) if parsed['back'] else '<i>(empty)</i>'
+
+    await safe_send_text(
+        update.message,
+        f"<b>\U0001f4cb Preview</b>\n\nFront: {front}\nBack: {back}",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('\u2714 Save', callback_data='save_review_edit'),
+            InlineKeyboardButton('\u2716 Cancel', callback_data='cancel_review_edit'),
+        ]]),
+    )
+    return ReviewState.EDITING_CARD_PREVIEW
+
+
+async def save_review_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    card_id = context.user_data.pop('review_editing_card_id', None)
+    parsed = context.user_data.pop('review_edit_parsed', {})
+    is_photo = context.user_data.pop('review_edit_is_photo', False)
+    user_id = update.effective_user.id
+
+    if card_id and parsed:
+        if is_photo:
+            db.update_card_caption(card_id, user_id, parsed.get('back', ''))
+        else:
+            db.update_card_content(card_id, user_id, parsed['front'], parsed.get('back', ''))
+
+    _cleanup_review_data(context)
+    from handlers.start import build_main_menu
+    text, markup = build_main_menu(user_id)
+    await safe_edit_text(query, text, reply_markup=markup)
+    return ConversationHandler.END
+
+
+async def cancel_review_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    context.user_data.pop('review_editing_card_id', None)
+    context.user_data.pop('review_edit_parsed', None)
+    context.user_data.pop('review_editing_is_photo', None)
+    context.user_data.pop('review_edit_is_photo', None)
+    _cleanup_review_data(context)
+    from handlers.start import build_main_menu
+    text, markup = build_main_menu(update.effective_user.id)
+    await safe_edit_text(query, text, reply_markup=markup)
     return ConversationHandler.END
 
 
@@ -254,6 +363,19 @@ def _progress_label(index: int, total: int) -> str:
     return f"{index + 1}/{total}"
 
 
+def _front_buttons() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("\U0001f441 Show answer", callback_data='show_answer')],
+        [InlineKeyboardButton("\u23f9 Stop", callback_data='cancel_review')],
+    ])
+
+
+def _front_meta(card: dict[str, Any], index: int, total: int) -> str:
+    deck_name = html.escape(db.get_deck_name(card['deck_id']) or '\u2014')
+    progress = _progress_label(index, total)
+    return f"<i>\U0001f4c1 {deck_name}  \u00b7  {progress}</i>"
+
+
 async def _show_front(message: Message, context: ContextTypes.DEFAULT_TYPE) -> int:
     cards = context.user_data.get('review_cards', [])
     index = context.user_data.get('review_index', 0)
@@ -263,17 +385,13 @@ async def _show_front(message: Message, context: ContextTypes.DEFAULT_TYPE) -> i
 
     card = cards[index]
     is_photo = card.get('content_type') == 'photo'
-    progress = _progress_label(index, len(cards))
-
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answer", callback_data='show_answer')],
-        [InlineKeyboardButton("Stop", callback_data='cancel_review')]
-    ])
+    meta = _front_meta(card, index, len(cards))
+    buttons = _front_buttons()
 
     if is_photo:
-        await safe_send_photo(message, card['front'], caption=f"<i>{progress}</i>", reply_markup=buttons)
+        await safe_send_photo(message, card['front'], caption=meta, reply_markup=buttons)
     else:
-        text = f"<b>{html.escape(card['front'])}</b>\n\n<i>{progress}</i>"
+        text = f"{meta}\n\n<b>{html.escape(card['front'])}</b>"
         await safe_send_text(message, text, reply_markup=buttons)
 
     return ReviewState.SHOWING_FRONT
@@ -287,15 +405,9 @@ async def _show_front_edit(query: CallbackQuery, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
 
     card = cards[index]
-    progress = _progress_label(index, len(cards))
-
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answer", callback_data='show_answer')],
-        [InlineKeyboardButton("Stop", callback_data='cancel_review')]
-    ])
-
-    text = f"<b>{html.escape(card['front'])}</b>\n\n<i>{progress}</i>"
-    await safe_edit_text(query, text, reply_markup=buttons)
+    meta = _front_meta(card, index, len(cards))
+    text = f"{meta}\n\n<b>{html.escape(card['front'])}</b>"
+    await safe_edit_text(query, text, reply_markup=_front_buttons())
 
     return ReviewState.SHOWING_FRONT
 
@@ -309,18 +421,14 @@ async def _show_front_in_chat(chat_id: int, context: ContextTypes.DEFAULT_TYPE) 
 
     card = cards[index]
     is_photo = card.get('content_type') == 'photo'
-    progress = _progress_label(index, len(cards))
+    meta = _front_meta(card, index, len(cards))
     target = (chat_id, context.bot)
-
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answer", callback_data='show_answer')],
-        [InlineKeyboardButton("Stop", callback_data='cancel_review')]
-    ])
+    buttons = _front_buttons()
 
     if is_photo:
-        await safe_send_photo(target, card['front'], caption=f"<i>{progress}</i>", reply_markup=buttons)
+        await safe_send_photo(target, card['front'], caption=meta, reply_markup=buttons)
     else:
-        text = f"<b>{html.escape(card['front'])}</b>\n\n<i>{progress}</i>"
+        text = f"{meta}\n\n<b>{html.escape(card['front'])}</b>"
         await safe_send_text(target, text, reply_markup=buttons)
 
     return ReviewState.SHOWING_FRONT
@@ -350,8 +458,8 @@ def _build_rating_buttons(card: dict[str, Any]) -> list[list[InlineKeyboardButto
             ),
         ],
         [
-            InlineKeyboardButton("Edit", callback_data=f"edit_review_{card['card_id']}"),
-            InlineKeyboardButton("Stop", callback_data='cancel_review'),
+            InlineKeyboardButton("\u270f\ufe0f Edit", callback_data=f"edit_review_{card['card_id']}"),
+            InlineKeyboardButton("\u23f9 Stop", callback_data='cancel_review'),
         ],
     ]
 
@@ -374,3 +482,7 @@ def _cleanup_review_data(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop('review_index', None)
     context.user_data.pop('review_correct', None)
     context.user_data.pop('review_total', None)
+    context.user_data.pop('review_editing_card_id', None)
+    context.user_data.pop('review_edit_parsed', None)
+    context.user_data.pop('review_editing_is_photo', None)
+    context.user_data.pop('review_edit_is_photo', None)

@@ -44,6 +44,13 @@ def get_user_defaults(user_id: int) -> dict[str, Any] | None:
         return None
 
 
+def clear_default_deck(user_id: int) -> None:
+    """Set default_deck_id to NULL (used when the saved deck is deleted)."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET default_deck_id = NULL WHERE user_id = ?', (user_id,))
+
+
 def update_user_defaults(user_id: int, deck_id: int | None = None, card_type: str | None = None) -> None:
     with get_db() as conn:
         cursor = conn.cursor()
@@ -153,7 +160,8 @@ def get_due_cards(user_id: int, deck_id: int | None = None) -> list[dict[str, An
         if deck_id is not None:
             cursor.execute(
                 """SELECT card_id, front, back, card_type, content_type, state,
-                          stability, difficulty, reps, lapses, deck_id
+                          stability, difficulty, reps, lapses, deck_id,
+                          due_date, scheduled_days
                    FROM cards
                    WHERE user_id = ? AND deck_id = ? AND due_date <= datetime('now')
                    ORDER BY
@@ -166,7 +174,8 @@ def get_due_cards(user_id: int, deck_id: int | None = None) -> list[dict[str, An
         else:
             cursor.execute(
                 """SELECT card_id, front, back, card_type, content_type, state,
-                          stability, difficulty, reps, lapses, deck_id
+                          stability, difficulty, reps, lapses, deck_id,
+                          due_date, scheduled_days
                    FROM cards
                    WHERE user_id = ? AND due_date <= datetime('now')
                    ORDER BY
@@ -184,7 +193,7 @@ def get_cards_in_deck(deck_id: int, user_id: int) -> list[dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT card_id, front, back, card_type FROM cards WHERE deck_id = ? AND user_id = ? ORDER BY card_id",
+            "SELECT card_id, front, back, card_type, content_type FROM cards WHERE deck_id = ? AND user_id = ? ORDER BY card_id",
             (deck_id, user_id)
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -194,11 +203,21 @@ def get_card(card_id: int, user_id: int) -> dict[str, Any] | None:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT card_id, front, back, card_type, deck_id FROM cards WHERE card_id = ? AND user_id = ?",
+            "SELECT card_id, front, back, card_type, content_type, deck_id FROM cards WHERE card_id = ? AND user_id = ?",
             (card_id, user_id)
         )
         row = cursor.fetchone()
         return dict(row) if row else None
+
+
+def update_card_caption(card_id: int, user_id: int, caption: str) -> None:
+    """Update only the back (caption) of a photo card, leaving front (file_id) untouched."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE cards SET back = ?, updated_at = datetime('now') WHERE card_id = ? AND user_id = ?",
+            (caption, card_id, user_id)
+        )
 
 
 def delete_card(card_id: int, user_id: int) -> None:
@@ -210,10 +229,24 @@ def delete_card(card_id: int, user_id: int) -> None:
 def update_card_content(card_id: int, user_id: int, front: str, back: str) -> None:
     with get_db() as conn:
         cursor = conn.cursor()
+        # Read old state first — needed to locate reverse sibling
+        cursor.execute(
+            "SELECT front, back, card_type, deck_id FROM cards WHERE card_id = ? AND user_id = ?",
+            (card_id, user_id)
+        )
+        old = cursor.fetchone()
         cursor.execute(
             "UPDATE cards SET front = ?, back = ?, updated_at = datetime('now') WHERE card_id = ? AND user_id = ?",
             (front, back, card_id, user_id)
         )
+        # P-3: keep reverse sibling in sync
+        if old and old['card_type'] == 'reverse':
+            cursor.execute(
+                """UPDATE cards SET front = ?, back = ?, updated_at = datetime('now')
+                   WHERE user_id = ? AND deck_id = ? AND card_type = 'reverse'
+                     AND front = ? AND back = ? AND card_id != ?""",
+                (back, front, user_id, old['deck_id'], old['back'], old['front'], card_id)
+            )
 
 
 def delete_deck(deck_id: int, user_id: int) -> None:

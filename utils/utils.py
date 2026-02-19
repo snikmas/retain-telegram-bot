@@ -1,12 +1,9 @@
 from telegram import InlineKeyboardButton, PhotoSize
 
 
-def parse_photo(photo_obj: PhotoSize, card_type: str | None = None) -> dict[str, str | bool]:
-    """
-    For now, stores the file_id so we can send it back later.
-    OCR / image-to-text can be added here.
-    """
-    return {'front': photo_obj.file_id, 'back': '', 'is_photo': True}
+def parse_photo(photo_obj: PhotoSize, caption: str | None = None) -> dict[str, str | bool]:
+    """Stores the file_id as front. Caption (if any) becomes the back."""
+    return {'front': photo_obj.file_id, 'back': caption.strip() if caption else '', 'is_photo': True}
 
 
 def parse_text(content: str, card_type: str | None = None) -> dict[str, str]:
