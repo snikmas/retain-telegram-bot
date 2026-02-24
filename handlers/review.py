@@ -8,6 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Callbac
 from telegram.ext import ContextTypes, ConversationHandler
 
 import database.database as db
+import utils.callbacks as cb
 from utils.constants import ReviewState
 from utils.utils import parse_text
 from utils.srs import schedule, schedule_all_ratings, _format_interval, AGAIN, HARD, GOOD, EASY
@@ -47,7 +48,7 @@ async def review_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             deck_name = db.get_deck_name(deck_id) or f"Deck {deck_id}"
             picker_buttons.append([InlineKeyboardButton(
                 f"\U0001f4da {deck_name}  \u00b7  {count} due",
-                callback_data=f'review_deck_{deck_id}',
+                callback_data=cb.make(cb.REVIEW_DECK, deck_id),
             )])
         picker_buttons.append([InlineKeyboardButton(
             f"\u25b6 All decks \u00b7 {len(cards)} due",
@@ -69,7 +70,7 @@ async def review_deck_selected(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
 
-    deck_id = int(query.data.split('_')[2])
+    deck_id = cb.parse_int(query.data, cb.REVIEW_DECK)
     all_cards = context.user_data.get('review_cards', [])
     filtered = [c for c in all_cards if c['deck_id'] == deck_id]
 
@@ -147,7 +148,7 @@ async def rate_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
 
-    rating = int(query.data.split('_')[1])
+    rating = cb.parse_int(query.data, cb.RATE)
 
     cards = context.user_data.get('review_cards', [])
     index = context.user_data.get('review_index', 0)
@@ -158,12 +159,14 @@ async def rate_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     card = cards[index]
     result = schedule(card, rating)
 
-    # A-6: compute elapsed_days from scheduled_days + overdue days
+    # Compute actual elapsed days since last review.
+    # scheduled_days = planned interval; overdue = extra days past due_date.
     elapsed_days = card.get('scheduled_days', 0)
     due_date_str = card.get('due_date', '')
-    if due_date_str and elapsed_days > 0:
+    if due_date_str:
         try:
-            overdue = max(0, (datetime.now() - datetime.strptime(due_date_str, '%Y-%m-%d %H:%M:%S')).days)
+            due_dt = datetime.strptime(due_date_str, '%Y-%m-%d %H:%M:%S')
+            overdue = max(0, (datetime.now() - due_dt).days)
             elapsed_days += overdue
         except ValueError:
             pass
@@ -227,7 +230,7 @@ async def edit_card_in_review(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
-    card_id = int(query.data.split('_')[2])
+    card_id = cb.parse_int(query.data, cb.EDIT_REVIEW)
     user_id = update.effective_user.id
 
     card = db.get_card(card_id, user_id)
@@ -440,25 +443,25 @@ def _build_rating_buttons(card: dict[str, Any]) -> list[list[InlineKeyboardButto
         [
             InlineKeyboardButton(
                 f"\U0001f534 Again \u00b7 {_format_interval(results[AGAIN])}",
-                callback_data=f'rate_{AGAIN}'
+                callback_data=cb.make(cb.RATE, AGAIN),
             ),
             InlineKeyboardButton(
                 f"\U0001f7e0 Hard \u00b7 {_format_interval(results[HARD])}",
-                callback_data=f'rate_{HARD}'
+                callback_data=cb.make(cb.RATE, HARD),
             ),
         ],
         [
             InlineKeyboardButton(
                 f"\U0001f7e2 Good \u00b7 {_format_interval(results[GOOD])}",
-                callback_data=f'rate_{GOOD}'
+                callback_data=cb.make(cb.RATE, GOOD),
             ),
             InlineKeyboardButton(
                 f"\U0001f535 Easy \u00b7 {_format_interval(results[EASY])}",
-                callback_data=f'rate_{EASY}'
+                callback_data=cb.make(cb.RATE, EASY),
             ),
         ],
         [
-            InlineKeyboardButton("\u270f\ufe0f Edit", callback_data=f"edit_review_{card['card_id']}"),
+            InlineKeyboardButton("\u270f\ufe0f Edit", callback_data=cb.make(cb.EDIT_REVIEW, card['card_id'])),
             InlineKeyboardButton("\u23f9 Stop", callback_data='cancel_review'),
         ],
     ]

@@ -1,5 +1,7 @@
 from telegram import InlineKeyboardButton, PhotoSize
 
+import utils.callbacks as cb
+
 
 def parse_photo(photo_obj: PhotoSize, caption: str | None = None) -> dict[str, str | bool]:
     """Stores the file_id as front. Caption (if any) becomes the back."""
@@ -30,7 +32,7 @@ def get_buttons(items: list[dict[str, str | int]], prefix: str) -> list[list[Inl
         buttons.append([
             InlineKeyboardButton(
                 item['name'],
-                callback_data=f"{prefix}_{item['id']}"
+                callback_data=cb.make(prefix, item['id'])
             )
         ])
     return buttons

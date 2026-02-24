@@ -4,6 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Callbac
 from telegram.ext import ContextTypes
 
 import database.database as db
+import utils.callbacks as cb
 from utils.telegram_helpers import safe_edit_text, safe_send_text
 
 DECKS_PER_PAGE = 5
@@ -38,7 +39,7 @@ async def decks_page(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     query = update.callback_query
     await query.answer()
 
-    page = int(query.data.split('_')[2])  # decks_page_N
+    page = cb.parse_int(query.data, cb.DECKS_PAGE)
     await _show_decks_page(query, context, page)
 
 
@@ -71,7 +72,7 @@ def _deck_button(deck: dict[str, Any]) -> InlineKeyboardButton:
     total = deck['card_count'] or 0
     due_part = f"  \u2757 {due} due" if due > 0 else ""
     label = f"\U0001f4da {deck['deck_name']} \u00b7 {total} cards{due_part}"
-    return InlineKeyboardButton(label, callback_data=f"deck_open_{deck['deck_id']}")
+    return InlineKeyboardButton(label, callback_data=cb.make(cb.DECK_OPEN, deck['deck_id']))
 
 
 def _build_decks_markup(
@@ -94,9 +95,9 @@ def _build_decks_markup(
     if total_pages > 1:
         nav: list[InlineKeyboardButton] = []
         if page > 0:
-            nav.append(InlineKeyboardButton("\u2190", callback_data=f'decks_page_{page - 1}'))
+            nav.append(InlineKeyboardButton("\u2190", callback_data=cb.make(cb.DECKS_PAGE, page - 1)))
         if page < total_pages - 1:
-            nav.append(InlineKeyboardButton("\u2192", callback_data=f'decks_page_{page + 1}'))
+            nav.append(InlineKeyboardButton("\u2192", callback_data=cb.make(cb.DECKS_PAGE, page + 1)))
         buttons.append(nav)
 
     buttons.append([InlineKeyboardButton("Menu", callback_data='main_menu')])

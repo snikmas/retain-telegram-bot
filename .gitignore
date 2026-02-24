@@ -4,3 +4,7 @@ myvenv/
 text.txt
 retain.db
 problems.md
+.pytest_cache
+.venv
+.claude
+CLAUDE.md

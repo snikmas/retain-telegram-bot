@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 import database.database as db
 import handlers.flow_handlers as hand_flow
 import utils.utils as utils
+import utils.callbacks as cb
 from utils.constants import AddCardState
 from utils.telegram_helpers import safe_edit_text
 
@@ -163,7 +164,7 @@ async def set_card_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     query = update.callback_query
     await query.answer()
 
-    card_type = query.data.split('_')[2]  # set_type_basic → 'basic', set_type_reverse → 'reverse'
+    card_type = cb.parse_args(query.data, cb.SET_TYPE)[0]
     context.user_data['temp_type'] = card_type
 
     await hand_flow.preview(query, context)

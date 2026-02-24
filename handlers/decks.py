@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 
 import database.database as db
 import handlers.flow_handlers as hand_flow
+import utils.callbacks as cb
 from utils.constants import AddCardState, DECK_NAME_MAX
 from utils.telegram_helpers import safe_send_text, safe_edit_text
 
@@ -50,7 +51,7 @@ async def selected_deck(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     query = update.callback_query
     await query.answer()
 
-    deck_id = int(query.data.split('_')[1])
+    deck_id = cb.parse_int(query.data, cb.DECK)
     context.user_data['cur_deck_id'] = deck_id
 
     await hand_flow.preview(query, context)
